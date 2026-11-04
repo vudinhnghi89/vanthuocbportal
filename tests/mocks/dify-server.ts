@@ -93,3 +93,13 @@ export function workflowOk(outputs: Record<string, unknown>): MockReply {
     },
   };
 }
+
+/**
+ * Body text that echoes the received `Authorization: Bearer <key>` header, positioned so the
+ * key straddles character `cut` of the body (10 chars of the key before the cut) (to exercise truncation boundaries).
+ */
+export function echoBearer(req: RecordedRequest, cut = 300): string {
+  const auth = String(req.headers.authorization ?? "");
+  const keyStart = auth.indexOf(" ") + 1;
+  return "x".repeat(Math.max(0, cut - 10 - keyStart)) + auth + " tail";
+}

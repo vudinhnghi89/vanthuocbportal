@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  DifyConfigError,
   DifyHttpError,
   DifyOutputError,
   DifyTimeoutError,
@@ -11,7 +12,7 @@ import {
   runOcr,
   type DifySettings,
 } from "@/integrations/dify/client";
-import { startDifyMock, workflowOk, type DifyMock } from "../mocks/dify-server";
+import { echoBearer, startDifyMock, workflowOk, type DifyMock } from "../mocks/dify-server";
 
 const API_KEY = "app-SECRETKEY1234";
 let mock: DifyMock;
@@ -116,8 +117,8 @@ describe("runOcr", () => {
   });
 
   it("throws DifyTimeoutError when the server is too slow (after retries)", async () => {
-    mock.onUpload = () => ({ body: { id: "f" }, delayMs: 1500 });
-    const err = await runOcr(cfg({ timeoutS: 1, retries: 1 }), pdfPath, fast).catch((e) => e);
+    mock.onUpload = () => ({ body: { id: "f" }, delayMs: 500 });
+    const err = await runOcr(cfg({ timeoutS: 0.05, retries: 1 }), pdfPath, fast).catch((e) => e);
     expect(err).toBeInstanceOf(DifyTimeoutError);
     expect(mock.uploads).toHaveLength(2);
   });
@@ -164,6 +165,78 @@ describe("runOcr", () => {
     const delays: number[] = [];
     await runOcr(cfg(), pdfPath, { sleep: async (ms) => void delays.push(ms) });
     expect(delays).toEqual([1000, 2000]);
+  });
+});
+
+function expectNoKey(err: unknown) {
+  const text = `${(err as Error).message} ${JSON.stringify(err)}`;
+  expect(text).not.toContain(API_KEY);
+  for (let i = 0; i + 8 <= API_KEY.length; i++) {
+    expect(text).not.toContain(API_KEY.slice(i, i + 8));
+  }
+}
+
+describe("api key never leaks", () => {
+  for (const status of [400, 401, 500]) {
+    for (const cut of [10, 297, 300, 305]) {
+      it(`HTTP ${status} body echoing the key (key at char ${cut})`, async () => {
+        mock.onUpload = (r) => ({ status, body: echoBearer(r, cut) });
+        const err = await runOcr(cfg({ retries: 0 }), pdfPath, fast).catch((e) => e);
+        expect(err).toBeInstanceOf(DifyHttpError);
+        expectNoKey(err);
+      });
+    }
+  }
+
+  it("scrubs url-encoded and json-escaped forms of the key", async () => {
+    const key = 'app-a/b"c+d e';
+    mock.onUpload = () => ({
+      status: 400,
+      body: `${encodeURIComponent(key)} | ${JSON.stringify(key).slice(1, -1)} | ${key}`,
+    });
+    const err = await runOcr(cfg({ apiKey: key, retries: 0 }), pdfPath, fast).catch((e) => e);
+    expect(err.message).not.toContain(encodeURIComponent(key));
+    expect(err.message).not.toContain(JSON.stringify(key).slice(1, -1));
+    expect(err.message).not.toContain(key);
+  });
+
+  for (const cut of [10, 297, 300]) {
+    it(`workflow data.error echoing the key (key at char ${cut})`, async () => {
+      mock.onRun = (r) => ({ body: { data: { status: "failed", error: echoBearer(r, cut) } } });
+      const err = await runOcr(cfg(), pdfPath, fast).catch((e) => e);
+      expect(err).toBeInstanceOf(DifyWorkflowError);
+      expectNoKey(err);
+      const err2 = await pickRule(cfg(), "m", [{ id: 1, title: "t", summary: "s" }], fast).catch((e) => e);
+      expect(err2).toBeInstanceOf(DifyWorkflowError);
+      expectNoKey(err2);
+    });
+  }
+});
+
+describe("settings guard", () => {
+  it.each([NaN, undefined, -3, Infinity])("retries=%s terminates without looping", async (retries) => {
+    mock.onRun = () => ({ status: 500, body: {} });
+    const err = await runOcr(cfg({ retries: retries as number }), pdfPath, fast).catch((e) => e);
+    expect(err).toBeInstanceOf(DifyHttpError);
+    expect(mock.runs.length).toBeLessThanOrEqual(11);
+  }, 3000);
+
+  it("fractional and huge retries are floored/capped", async () => {
+    mock.onRun = () => ({ status: 500, body: {} });
+    await runOcr(cfg({ retries: 1.9 }), pdfPath, fast).catch(() => {});
+    expect(mock.runs).toHaveLength(2);
+    mock.runs.length = 0;
+    await runOcr(cfg({ retries: 1000 }), pdfPath, fast).catch(() => {});
+    expect(mock.runs).toHaveLength(11);
+  });
+
+  it.each([NaN, 0, -1, undefined, Infinity])("timeoutS=%s throws DifyConfigError, no request", async (t) => {
+    const err = await runOcr(cfg({ timeoutS: t as number }), pdfPath, fast).catch((e) => e);
+    expect(err).toBeInstanceOf(DifyConfigError);
+    const err2 = await pickRule(cfg({ timeoutS: t as number }), "m", [], fast).catch((e) => e);
+    expect(err2).toBeInstanceOf(DifyConfigError);
+    expect(mock.uploads).toHaveLength(0);
+    expect(mock.runs).toHaveLength(0);
   });
 });
 

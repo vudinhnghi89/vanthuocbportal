@@ -37,3 +37,6 @@ export class DifyWorkflowError extends DifyError {
 
 /** Workflow succeeded but an expected output variable is missing or malformed. */
 export class DifyOutputError extends DifyError {}
+
+/** Invalid integration settings (e.g. non-positive timeout); never retried. */
+export class DifyConfigError extends DifyError {}

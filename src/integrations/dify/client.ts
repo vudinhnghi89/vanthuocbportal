@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  DifyConfigError,
   DifyError,
   DifyHttpError,
   DifyNetworkError,
@@ -40,9 +41,29 @@ function truncate(text: string, max = MAX_TEXT): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-/** Remove the API key from any text that ends up in an error message. */
+/** Remove the API key (raw, URL-encoded and JSON-escaped forms) from text bound for error messages. */
 function scrub(text: string, cfg: DifySettings): string {
-  return cfg.apiKey ? text.split(cfg.apiKey).join("[redacted]") : text;
+  if (!cfg.apiKey) return text;
+  const forms = new Set([cfg.apiKey, encodeURIComponent(cfg.apiKey), JSON.stringify(cfg.apiKey).slice(1, -1)]);
+  let out = text;
+  for (const f of [...forms].sort((a, b) => b.length - a.length)) out = out.split(f).join("[redacted]");
+  return out;
+}
+
+/** Scrub first, then truncate, so a key straddling the cut cannot leave a partial prefix. */
+function safeText(text: string, cfg: DifySettings): string {
+  return truncate(scrub(text, cfg));
+}
+
+const MAX_RETRIES = 10;
+
+/** Validate/normalise settings: bad timeout throws, bad retries fall back to 0 (capped at 10). */
+function normalise(cfg: DifySettings): DifySettings {
+  if (!Number.isFinite(cfg.timeoutS) || cfg.timeoutS <= 0) {
+    throw new DifyConfigError("Dify timeout must be a positive number of seconds");
+  }
+  const retries = Number.isFinite(cfg.retries) ? Math.min(MAX_RETRIES, Math.max(0, Math.floor(cfg.retries))) : 0;
+  return { ...cfg, retries };
 }
 
 function endpoint(cfg: DifySettings, p: string): string {
@@ -63,7 +84,7 @@ async function attempt(cfg: DifySettings, p: string, init: RequestInit): Promise
       signal: AbortSignal.timeout(cfg.timeoutS * 1000),
     });
     const text = await res.text();
-    if (!res.ok) throw new DifyHttpError(res.status, scrub(truncate(text), cfg));
+    if (!res.ok) throw new DifyHttpError(res.status, safeText(text, cfg));
     try {
       return JSON.parse(text);
     } catch {
@@ -115,7 +136,7 @@ async function runWorkflow(
   const data = res?.data;
   if (!data || data.status !== "succeeded") {
     const detail = typeof data?.error === "string" ? data.error : "";
-    throw new DifyWorkflowError(String(data?.status ?? "unknown"), scrub(truncate(detail), cfg));
+    throw new DifyWorkflowError(String(data?.status ?? "unknown"), safeText(detail, cfg));
   }
   return data.outputs ?? {};
 }
@@ -130,6 +151,7 @@ export async function runOcr(
   pdfPath: string,
   opts: DifyClientOptions = {},
 ): Promise<{ markdown: string; json: unknown }> {
+  cfg = normalise(cfg);
   const bytes = await fs.readFile(pdfPath);
   const filename = path.basename(pdfPath);
   const up = (await request(
@@ -201,6 +223,7 @@ export async function pickRule(
   candidates: RuleCandidate[],
   opts: DifyClientOptions = {},
 ): Promise<number | null> {
+  cfg = normalise(cfg);
   const outputs = await runWorkflow(
     cfg,
     { [cfg.inputVar]: markdown, candidates: JSON.stringify(candidates) },
