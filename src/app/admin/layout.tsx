@@ -6,6 +6,7 @@ import { HttpError, requireAdmin } from "@/auth/guards";
 const NAV = [
   { href: "/admin/units", label: "Đơn vị" },
   { href: "/admin/rules", label: "Quy tắc" },
+  { href: "/admin/aliases", label: "Bí danh cơ quan" },
   { href: "/admin/users", label: "Người dùng" },
   { href: "/admin/integrations", label: "Cấu hình tích hợp" },
 ];

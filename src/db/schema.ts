@@ -87,6 +87,8 @@ export const issuerAliases = pgTable("issuer_aliases", {
   id: serial("id").primaryKey(),
   alias: text("alias").notNull().unique(),
   canonicalIssuer: text("canonical_issuer").notNull(),
+  /** normalize(alias): khóa duy nhất để bí danh không trùng sau chuẩn hóa. */
+  aliasNorm: text("alias_norm").notNull().unique(),
 });
 
 export const documents = pgTable(

@@ -93,9 +93,9 @@ describe.skipIf(mode !== "run")("db schema, migration, seed", () => {
   });
 
   it("issuer_aliases.alias là unique; documents mặc định status queued", async () => {
-    await db.insert(schema.issuerAliases).values({ alias: "byt", canonicalIssuer: "bo y te" });
+    await db.insert(schema.issuerAliases).values({ alias: "byt", canonicalIssuer: "bo y te", aliasNorm: "byt" });
     await expect(
-      db.insert(schema.issuerAliases).values({ alias: "byt", canonicalIssuer: "x" }),
+      db.insert(schema.issuerAliases).values({ alias: "byt", canonicalIssuer: "x", aliasNorm: "byt2" }),
     ).rejects.toThrow();
     const [d] = await db.insert(schema.documents).values({ filename: "a.pdf", pdfPath: "/data/pdf/x.pdf" }).returning();
     expect(d.status).toBe("queued");
