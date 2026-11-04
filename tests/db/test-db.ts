@@ -20,6 +20,8 @@ export async function createTestDb() {
   await migrate(db, { migrationsFolder: path.resolve(__dirname, "../../drizzle") });
   return {
     db,
+    /** Chuỗi kết nối tới database tạm (cho thành phần cần kết nối riêng, như pg-boss). */
+    url: u.toString(),
     async cleanup() {
       await pool.end();
       await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
