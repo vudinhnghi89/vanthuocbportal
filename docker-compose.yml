@@ -39,6 +39,8 @@ services:
     build: .
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
+    # Phải lớn hơn SHUTDOWN_TIMEOUT_MS (30s) trong src/worker/config.ts.
+    stop_grace_period: 45s
     env_file: .env
     depends_on:
       postgres:

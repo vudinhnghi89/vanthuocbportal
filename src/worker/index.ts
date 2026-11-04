@@ -1,6 +1,5 @@
+import { SHUTDOWN_TIMEOUT_MS } from "./config";
 import { startOcrWorker } from "./queue";
-
-const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 async function main() {
   // Placeholder: T-4.1 thay bằng handleOcrJob. Chỉ log id văn bản, không log nội dung.
