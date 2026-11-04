@@ -17,7 +17,7 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
     for (const f of [...FIELDS, "active"]) if (f in body) patch[f] = body[f];
     if (Object.keys(patch).length === 0) return Response.json({ error: "Không có thay đổi" }, { status: 400 });
     const result = await updateRule(id, patch as RulePatch, admin.user.id);
-    return Response.json(result);
+    return Response.json(result.rule);
   } catch (e) {
     return ruleErrorResponse(e);
   }

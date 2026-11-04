@@ -117,45 +117,45 @@ export async function createRule(input: RuleInput, _actorId: number, db: DbLike 
   });
 }
 
-export async function updateRule(id: number, patch: RulePatch, _actorId: number, db: DbLike = defaultDb): Promise<Rule> {
+/** Kết quả thao tác sửa: `before` là dòng đọc (FOR UPDATE) trong giao dịch; changed=false -> không ghi gì. */
+export type RuleChange = { rule: Rule; before: Rule; changed: boolean };
+
+const EDITABLE = ["issuer", "docType", "title", "summary", "mainUnitId", "infoUnitId", "priority", "active"] as const;
+
+export async function updateRule(
+  id: number,
+  patch: RulePatch,
+  _actorId: number,
+  db: DbLike = defaultDb,
+): Promise<RuleChange> {
   const clean = cleanFields(patch);
   return db.transaction(async (tx) => {
     const [current] = await tx.select().from(rules).where(eq(rules.id, id)).for("update");
     if (!current) throw new RuleError("not_found");
     await assertActiveUnits(tx, [clean.mainUnitId, clean.infoUnitId]);
+    const differs = EDITABLE.some((k) => k in clean && clean[k] !== current[k]);
+    if (!differs) return { rule: current, before: current, changed: false };
     const [row] = await tx
       .update(rules)
       .set({ ...clean, updatedAt: sql`clock_timestamp()` })
       .where(eq(rules.id, id))
       .returning();
-    return row;
+    return { rule: row, before: current, changed: true };
   });
 }
 
-/**
- * Bật/tắt trong một giao dịch, khóa dòng trước. Trả { rule, changed }: changed=false khi trạng thái
- * đã đúng như yêu cầu (không ghi, không đổi updated_at) để T-1.3 bỏ qua audit.
- */
+/** Bật/tắt: ủy quyền cho updateRule (một khóa, một UPDATE, không ghi khi không đổi). */
 export async function toggleRule(
   id: number,
   active: boolean,
-  _actorId: number,
+  actorId: number,
   db: DbLike = defaultDb,
-): Promise<{ rule: Rule; changed: boolean }> {
+): Promise<RuleChange> {
   if (typeof active !== "boolean") throw new RuleError("invalid_active");
-  return db.transaction(async (tx) => {
-    const [current] = await tx.select().from(rules).where(eq(rules.id, id)).for("update");
-    if (!current) throw new RuleError("not_found");
-    if (current.active === active) return { rule: current, changed: false };
-    const [row] = await tx
-      .update(rules)
-      .set({ active, updatedAt: sql`clock_timestamp()` })
-      .where(eq(rules.id, id))
-      .returning();
-    return { rule: row, changed: true };
-  });
+  return updateRule(id, { active }, actorId, db);
 }
 
+/** Trả dòng đã xóa (chính là `before` cho audit). */
 export async function deleteRule(id: number, _actorId: number, db: DbLike = defaultDb): Promise<Rule> {
   return db.transaction(async (tx) => {
     const [row] = await tx.delete(rules).where(eq(rules.id, id)).returning();

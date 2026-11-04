@@ -88,7 +88,11 @@ describe.skipIf(mode !== "run")("rules", () => {
     it("updateRule sửa field và làm updated_at tăng; sai dữ liệu không đổi DB", async () => {
       const r = await createRule(input(), 1, t.db);
       await sleep(15);
-      const u = await updateRule(r.id, { title: "Mới", priority: 5 }, 1, t.db);
+      const res = await updateRule(r.id, { title: "Mới", priority: 5 }, 1, t.db);
+      const u = res.rule;
+      expect(res.changed).toBe(true);
+      expect(res.before).toMatchObject({ title: "", priority: 0 });
+      expect(res.before.updatedAt.getTime()).toBe(r.updatedAt.getTime());
       expect(u).toMatchObject({ title: "Mới", priority: 5, issuer: "Bộ Y tế" });
       expect(u.updatedAt.getTime()).toBeGreaterThan(r.updatedAt.getTime());
       await expect(updateRule(r.id, { issuer: " " }, 1, t.db)).rejects.toMatchObject({ code: "invalid_issuer" });
@@ -104,6 +108,7 @@ describe.skipIf(mode !== "run")("rules", () => {
       const off = await toggleRule(r.id, false, 1, t.db);
       expect(off.changed).toBe(true);
       expect(off.rule.active).toBe(false);
+      expect(off.before.active).toBe(true);
       expect(off.rule.updatedAt.getTime()).toBeGreaterThan(r.updatedAt.getTime());
       await sleep(15);
       const on = await toggleRule(r.id, true, 1, t.db);
@@ -125,7 +130,7 @@ describe.skipIf(mode !== "run")("rules", () => {
 
     it("updateRule nhận active cùng field trong một lần cập nhật", async () => {
       const r = await createRule(input(), 1, t.db);
-      const u = await updateRule(r.id, { title: "T", active: false }, 1, t.db);
+      const u = (await updateRule(r.id, { title: "T", active: false }, 1, t.db)).rule;
       expect(u).toMatchObject({ title: "T", active: false });
       await expect(updateRule(r.id, { title: "U", active: "x" as never }, 1, t.db)).rejects.toMatchObject({
         code: "invalid_active",
@@ -134,9 +139,26 @@ describe.skipIf(mode !== "run")("rules", () => {
       expect(row.title).toBe("T");
     });
 
-    it("deleteRule xóa; không tồn tại -> not_found", async () => {
-      const r = await createRule(input(), 1, t.db);
-      await deleteRule(r.id, 1, t.db);
+    it("updateRule no-op (cùng giá trị / chỉ active hiện tại): không ghi, changed=false", async () => {
+      const r = await createRule(input({ title: "A", priority: 3 }), 1, t.db);
+      await sleep(15);
+      const same = await updateRule(r.id, { title: "A", priority: 3, infoUnitId: infoId }, 1, t.db);
+      expect(same.changed).toBe(false);
+      expect(same.rule).toEqual(r);
+      const onlyActive = await updateRule(r.id, { active: true }, 1, t.db);
+      expect(onlyActive.changed).toBe(false);
+      const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
+      expect(row.updatedAt.getTime()).toBe(r.updatedAt.getTime());
+      await sleep(15);
+      const real = await updateRule(r.id, { title: "A", active: false }, 1, t.db);
+      expect(real.changed).toBe(true);
+      expect(real.before.active).toBe(true);
+      expect(real.rule.active).toBe(false);
+    });
+
+    it("deleteRule trả dòng đã xóa; không tồn tại -> not_found", async () => {
+      const r = await createRule(input({ title: "Xóa" }), 1, t.db);
+      expect(await deleteRule(r.id, 1, t.db)).toEqual(r);
       expect(await listRules({}, t.db)).toHaveLength(0);
       await expect(deleteRule(r.id, 1, t.db)).rejects.toMatchObject({ code: "not_found" });
     });
