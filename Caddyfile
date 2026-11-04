@@ -1,0 +1,6 @@
+# Host ports 8080/8443 map to 80/443 here (Dify's nginx owns host 80/443).
+# `:80` serves plain HTTP; for HTTPS replace with your domain, e.g. `portal.example.vn`.
+:80 {
+	encode gzip
+	reverse_proxy web:3000
+}
