@@ -8,11 +8,17 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import * as schema from "@/db/schema";
 import { seed } from "@/db/seed";
 import { verifyPassword } from "@/lib/password";
+import { dbSuiteMode } from "./require-db";
 
 const baseUrl = process.env.DATABASE_URL;
-if (!baseUrl) console.warn("[schema.test] DATABASE_URL chưa đặt: bỏ qua test DB");
+const mode = dbSuiteMode(process.env);
+if (mode === "skip") console.warn("[schema.test] DATABASE_URL chưa đặt: bỏ qua test DB");
 
-describe.skipIf(!baseUrl)("db schema, migration, seed", () => {
+it.runIf(mode === "fail")("DATABASE_URL bắt buộc trong CI", () => {
+  throw new Error("DATABASE_URL chưa đặt trong CI: test DB không thể chạy, không được bỏ qua âm thầm");
+});
+
+describe.skipIf(mode !== "run")("db schema, migration, seed", () => {
   const dbName = `vtp_t_${randomBytes(6).toString("hex")}`;
   let admin: Pool;
   let pool: Pool;
