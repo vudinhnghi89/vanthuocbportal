@@ -20,8 +20,11 @@ export type DifyMock = {
   url: string;
   uploads: RecordedRequest[];
   runs: RecordedRequest[];
+  /** GET /v1/parameters (connection check). */
+  params: RecordedRequest[];
   onUpload: Handler;
   onRun: Handler;
+  onParameters: Handler;
   close(): Promise<void>;
 };
 
@@ -30,8 +33,10 @@ export async function startDifyMock(): Promise<DifyMock> {
     url: "",
     uploads: [],
     runs: [],
+    params: [],
     onUpload: () => ({ body: { id: "file-1" } }),
     onRun: () => ({ body: { data: { status: "succeeded", outputs: {} } } }),
+    onParameters: () => ({ body: { opening_statement: "", user_input_form: [] } }),
     close: async () => {},
   };
   const sockets = new Set<import("node:net").Socket>();
@@ -55,6 +60,9 @@ export async function startDifyMock(): Promise<DifyMock> {
         rec.json = JSON.parse(raw.toString("utf8"));
         handler = mock.onRun;
         list = mock.runs;
+      } else if (req.method === "GET" && path === "/v1/parameters") {
+        handler = mock.onParameters;
+        list = mock.params;
       }
       if (!handler || !list) {
         res.writeHead(404).end();

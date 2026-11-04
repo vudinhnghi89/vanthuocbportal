@@ -42,12 +42,16 @@ function truncate(text: string, max = MAX_TEXT): string {
 }
 
 /** Remove the API key (raw, URL-encoded and JSON-escaped forms) from text bound for error messages. */
-function scrub(text: string, cfg: DifySettings): string {
-  if (!cfg.apiKey) return text;
-  const forms = new Set([cfg.apiKey, encodeURIComponent(cfg.apiKey), JSON.stringify(cfg.apiKey).slice(1, -1)]);
+export function scrubKey(text: string, apiKey: string): string {
+  if (!apiKey) return text;
+  const forms = new Set([apiKey, encodeURIComponent(apiKey), JSON.stringify(apiKey).slice(1, -1)]);
   let out = text;
   for (const f of [...forms].sort((a, b) => b.length - a.length)) out = out.split(f).join("[redacted]");
   return out;
+}
+
+function scrub(text: string, cfg: DifySettings): string {
+  return scrubKey(text, cfg.apiKey);
 }
 
 /** Scrub first, then truncate, so a key straddling the cut cannot leave a partial prefix. */
