@@ -1,9 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authorizeCredentials } from "./authorize";
-import { db } from "@/db/client";
-import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { buildSessionUser } from "./callbacks";
 
 declare module "next-auth" {
   interface Session {
@@ -47,18 +45,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return token;
     },
     async session({ session, token }) {
-      // Đọc lại active/role từ DB để khóa tài khoản có hiệu lực ngay.
-      const [row] = await db
-        .select({ role: users.role, active: users.active })
-        .from(users)
-        .where(eq(users.id, token.uid as number))
-        .limit(1);
-      session.user = {
-        id: token.uid as number,
-        username: token.username as string,
-        role: row?.role ?? (token.role as "admin" | "user"),
-        active: row?.active ?? false,
-      } as typeof session.user;
+      session.user = (await buildSessionUser(token as Record<string, unknown>)) as typeof session.user;
       return session;
     },
   },

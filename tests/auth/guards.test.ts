@@ -41,9 +41,10 @@ describe("guards", () => {
     expect(s.user).toMatchObject({ id: 1, username: "u", role: "admin" });
   });
 
-  it("tài khoản bị khóa -> 403", async () => {
+  it("tài khoản bị khóa -> 401", async () => {
     authMock.mockResolvedValue(session("admin", { active: false }));
-    expect(await status(requireUser())).toBe(403);
+    expect(await status(requireUser())).toBe(401);
+    expect(await status(requireAdmin())).toBe(401);
   });
 });
 

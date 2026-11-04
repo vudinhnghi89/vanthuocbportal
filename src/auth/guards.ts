@@ -19,8 +19,8 @@ export function toErrorResponse(e: unknown): Response {
 
 export async function requireUser(): Promise<Session> {
   const session = await auth();
-  if (!session?.user) throw new HttpError(401, "Chưa đăng nhập");
-  if (!session.user.active) throw new HttpError(403, "Tài khoản đã bị khóa");
+  // Tài khoản bị khóa: phiên không còn hợp lệ -> 401 (403 chỉ dành cho thiếu vai trò).
+  if (!session?.user?.active) throw new HttpError(401, "Chưa đăng nhập");
   return session;
 }
 
