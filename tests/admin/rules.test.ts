@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { dbSuiteMode } from "../db/require-db";
 import { createTestDb } from "../db/test-db";
@@ -336,15 +336,49 @@ describe.skipIf(mode !== "run")("rules", () => {
       expect(e.actorUsername).toBeNull();
     });
 
-    it("hai updateRule đồng thời (khác field): đủ 2 audit, rule nhất quán, before của bản sau = after của bản trước", async () => {
+    it("updateRule chờ khóa dòng (FOR UPDATE) đang giữ; before của bản sau = after của bản trước", async () => {
       const r = await createRule(input({ title: "T0" }), 1, t.db);
-      await Promise.all([updateRule(r.id, { title: "T1" }, 1, t.db), updateRule(r.id, { priority: 9 }, 1, t.db)]);
+      let second!: Promise<unknown>;
+      let secondDone = false;
+      await t.db.transaction(async (tx) => {
+        await updateRule(r.id, { title: "T1" }, 1, tx); // giữ khóa dòng đến khi commit
+        second = updateRule(r.id, { priority: 9 }, 1, t.db).finally(() => {
+          secondDone = true;
+        });
+        await sleep(300);
+        expect(secondDone).toBe(false);
+      });
+      await second;
       const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
       expect(row).toMatchObject({ title: "T1", priority: 9 });
       const ups = (await auditRows(r.id)).filter((x) => x.action === "update");
       expect(ups).toHaveLength(2);
       expect(ups[1].before).toEqual(ups[0].after);
       expect(ups[1].after).toMatchObject({ title: "T1", priority: 9 });
+    });
+
+    it("listRuleAudit xếp theo thời điểm ghi audit, không theo lúc giao dịch bắt đầu", async () => {
+      const r = await createRule(input({ title: "T0" }), 1, t.db);
+      let release!: () => void;
+      const gate = new Promise<void>((res) => (release = res));
+      let started!: () => void;
+      const startedP = new Promise<void>((res) => (started = res));
+      // B bắt đầu trước (now() cố định), nhưng A commit trước rồi B mới ghi.
+      const b = t.db.transaction(async (tx) => {
+        await tx.execute(sql`select now()`);
+        started();
+        await gate;
+        await updateRule(r.id, { priority: 9 }, 1, tx);
+      });
+      await startedP;
+      await sleep(20);
+      await updateRule(r.id, { title: "T1" }, 1, t.db);
+      release();
+      await b;
+      const [newest, older] = await listRuleAudit(r.id, undefined, t.db);
+      expect(newest.action).toBe("update");
+      expect(newest.before).toEqual(older.after);
+      expect(newest.after).toMatchObject({ title: "T1", priority: 9 });
     });
 
     it("API: audit cần admin; lọc ruleId; ruleId sai -> 400; PATCH/POST/DELETE ghi actor là admin phiên", async () => {

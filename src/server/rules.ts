@@ -107,7 +107,7 @@ async function writeAudit(
   before: Rule | null,
   after: Rule | null,
 ): Promise<void> {
-  await tx.insert(ruleAudit).values({ ruleId, action, actorId, before, after });
+  await tx.insert(ruleAudit).values({ ruleId, action, actorId, before, after, at: sql`clock_timestamp()` });
 }
 
 export async function createRule(input: RuleInput, actorId: number, db: DbLike = defaultDb): Promise<Rule> {
