@@ -1,7 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
 import { documentEvents, documents, DOCUMENT_STATUSES } from "@/db/schema";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
+import type { PgDatabase } from "drizzle-orm/pg-core";
 import type * as schema from "@/db/schema";
 
 export type Status = (typeof DOCUMENT_STATUSES)[number];
@@ -48,7 +49,8 @@ export class DocumentNotFoundError extends Error {
   }
 }
 
-type DbLike = NodePgDatabase<typeof schema>;
+/** Cơ sở chung của db và tx (PgTransaction extends PgDatabase): truyền `tx` để ghép chung giao dịch với caller. */
+export type DbLike = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 export type TransitionOpts = { actorId?: number | null; note?: string; error?: string };
 
 /**

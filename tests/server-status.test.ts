@@ -166,7 +166,8 @@ describe.skipIf(mode !== "run")("transition", () => {
     afterAll(async () => {
       await listener?.end();
     });
-    const settle = () => new Promise((r) => setTimeout(r, 200));
+    // Round-trip trên chính kết nối LISTEN: thông báo đã commit được giao trước khi truy vấn này trả về.
+    const settle = () => listener.query("select 1");
 
     it("delivers once after commit", async () => {
       const id = await mk();
@@ -184,6 +185,38 @@ describe.skipIf(mode !== "run")("transition", () => {
       await t.db.execute(sql`create trigger boom before insert on document_events for each row execute function boom_fn()`);
       await transition(id, "ocr_processing", {}, t.db).catch(() => {});
       await settle();
+      expect(got).toEqual([]);
+    });
+    it("composes with caller's tx: commit keeps everything and notifies once", async () => {
+      const id = await mk();
+      got.length = 0;
+      await t.db.transaction(async (tx) => {
+        await tx.update(schema.documents).set({ needsManual: true }).where(eq(schema.documents.id, id));
+        await transition(id, "ocr_processing", {}, tx);
+      });
+      await settle();
+      const d = await doc(id);
+      expect(d.status).toBe("ocr_processing");
+      expect(d.needsManual).toBe(true);
+      expect(await events(id)).toHaveLength(1);
+      expect(got).toHaveLength(1);
+    });
+
+    it("composes with caller's tx: throw after transition rolls back everything, no notify", async () => {
+      const id = await mk();
+      got.length = 0;
+      await expect(
+        t.db.transaction(async (tx) => {
+          await tx.update(schema.documents).set({ needsManual: true }).where(eq(schema.documents.id, id));
+          await transition(id, "ocr_processing", {}, tx);
+          throw new Error("abort");
+        }),
+      ).rejects.toThrow("abort");
+      await settle();
+      const d = await doc(id);
+      expect(d.status).toBe("queued");
+      expect(d.needsManual).toBe(false);
+      expect(await events(id)).toHaveLength(0);
       expect(got).toEqual([]);
     });
   });
