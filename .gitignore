@@ -1,0 +1,7 @@
+.superpowers/
+node_modules/
+.next/
+dist/
+.env
+/data/
+coverage/
