@@ -27,7 +27,11 @@ export const users = pgTable(
     active: boolean("active").notNull().default(true),
     createdAt: ts("created_at"),
   },
-  () => [check("users_role_check", inList("role", USER_ROLES))],
+  (t) => [
+    check("users_role_check", inList("role", USER_ROLES)),
+    // tên đăng nhập duy nhất không phân biệt hoa thường
+    uniqueIndex("users_username_lower_unique").on(sql`lower(${t.username})`),
+  ],
 );
 
 export const units = pgTable(

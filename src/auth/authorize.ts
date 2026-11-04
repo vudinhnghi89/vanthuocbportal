@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db as defaultDb, type Db } from "@/db/client";
 import { users } from "@/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -13,7 +13,7 @@ export async function authorizeCredentials(
   password: string,
   db: Pick<Db, "select"> = defaultDb,
 ): Promise<AuthUser | null> {
-  const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+  const [user] = await db.select().from(users).where(sql`lower(${users.username}) = lower(${username})`).limit(1);
   const hash = user?.passwordHash ?? (await (dummyHash ??= hashPassword("dummy-password")));
   const ok = await verifyPassword(hash, password);
   if (!user || !ok || !user.active) return null;
