@@ -25,6 +25,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
+      # Shared with worker: web writes uploaded PDFs to /data/pdf, worker reads them (DATA_DIR=/data).
       - appdata:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
