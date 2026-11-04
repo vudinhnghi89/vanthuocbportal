@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/auth/config", () => ({ auth: (f: unknown) => f }));
+import { config } from "@/proxy";
 import { isPublicPath, proxyDecision } from "@/auth/public-paths";
 
 describe("isPublicPath", () => {
@@ -18,4 +20,15 @@ describe("proxyDecision", () => {
   it("đã đăng nhập -> đi tiếp", () => expect(proxyDecision("/documents", true)).toBe("next"));
   it("đường dẫn công khai đi tiếp", () => expect(proxyDecision("/login", false)).toBe("next"));
   it("/login-evil chưa đăng nhập -> redirect", () => expect(proxyDecision("/login-evil", false)).toBe("redirect"));
+});
+
+describe("proxy matcher", () => {
+  const re = new RegExp(`^${config.matcher[0]}$`);
+  it("/api/documents (upload) bị loại để body không bị cắt 10 MiB", () => {
+    expect(re.test("/api/documents")).toBe(false);
+  });
+  it.each(["/api/documents/123/retry", "/api/documentsX", "/api/documents-x", "/api/admin/units", "/documents"])(
+    "%s vẫn qua proxy",
+    (p) => expect(re.test(p)).toBe(true),
+  );
 });

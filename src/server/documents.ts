@@ -7,9 +7,8 @@ import type { DbLike } from "./status";
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_FILES = 10;
-/** Dư cho phần biên/tiêu đề multipart. */
-const MULTIPART_OVERHEAD = 1024 * 1024;
-export const MAX_REQUEST_BYTES = MAX_FILES * MAX_FILE_BYTES + MULTIPART_OVERHEAD;
+/** Trần tổng kích thước yêu cầu khai báo trong Content-Length (giới hạn bộ nhớ khi parse multipart). */
+export const MAX_REQUEST_BYTES = 200 * 1024 * 1024;
 
 export type UploadErrorCode = "bad_extension" | "empty" | "too_large" | "not_pdf" | "internal";
 const MESSAGES: Record<UploadErrorCode, string> = {

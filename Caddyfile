@@ -2,5 +2,9 @@
 # `:80` serves plain HTTP; for HTTPS replace with your domain, e.g. `portal.example.vn`.
 :80 {
 	encode gzip
+	# 10 files x 50 MB + multipart overhead; keep in sync with MAX_REQUEST_BYTES (200 MiB).
+	request_body {
+		max_size 210MB
+	}
 	reverse_proxy web:3000
 }

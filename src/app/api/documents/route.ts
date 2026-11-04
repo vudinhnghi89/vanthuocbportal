@@ -14,8 +14,11 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const session = await requireUser();
 
-    const declared = Number(req.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) {
+    const header = req.headers.get("content-length");
+    if (header === null || !/^\d+$/.test(header.trim())) {
+      return Response.json({ error: "Thiếu hoặc sai Content-Length" }, { status: 411 });
+    }
+    if (Number(header) > MAX_REQUEST_BYTES) {
       return Response.json({ error: "Yêu cầu quá lớn" }, { status: 413 });
     }
 

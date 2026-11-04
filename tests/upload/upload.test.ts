@@ -43,7 +43,13 @@ function pdfBytes(size = 64): Uint8Array {
 function req(files: { name: string; data: Uint8Array | string; type?: string }[]): Request {
   const fd = new FormData();
   for (const f of files) fd.append("files", new File([f.data as BlobPart], f.name, { type: f.type ?? "application/pdf" }));
-  return new Request("http://localhost/api/documents", { method: "POST", body: fd });
+  // Request(FormData) không tự đặt Content-Length (máy chủ thật luôn có): ước lượng bằng tổng kích thước.
+  const total = files.reduce((n, f) => n + (typeof f.data === "string" ? f.data.length : f.data.length) + 512, 0);
+  return new Request("http://localhost/api/documents", {
+    method: "POST",
+    body: fd,
+    headers: { "content-length": String(total) },
+  });
 }
 const pdfFiles = () => fs.readdirSync(path.join(dataDir(), "pdf"));
 
@@ -209,13 +215,38 @@ describe.skipIf(mode !== "run")("upload", () => {
   });
 
   it("không có file -> 400", async () => {
-    const res = await POST(new Request("http://localhost/api/documents", { method: "POST", body: new FormData() }));
+    const res = await POST(new Request("http://localhost/api/documents", { method: "POST", body: new FormData(), headers: { "content-length": "10" } }));
     expect(res.status).toBe(400);
+  });
+
+  it("thiếu hoặc sai Content-Length -> 411 mà không đọc body", async () => {
+    for (const cl of [undefined, "abc", "-5", "1e3"]) {
+      const headers = new Headers({ "content-type": "multipart/form-data; boundary=x" });
+      if (cl !== undefined) headers.set("content-length", cl);
+      const r = new Request("http://localhost/api/documents", { method: "POST", body: "x", headers });
+      if (cl === undefined) r.headers.delete("content-length");
+      const spy = vi.spyOn(r, "formData");
+      const res = await POST(r);
+      expect(res.status, String(cl)).toBe(411);
+      expect(spy).not.toHaveBeenCalled();
+    }
+  });
+
+  it("đúng 200 MiB qua kiểm tra sớm; 200 MiB + 1 -> 413", async () => {
+    const mk = (n: number) =>
+      new Request("http://localhost/api/documents", {
+        method: "POST",
+        body: "x",
+        headers: { "content-length": String(n), "content-type": "multipart/form-data; boundary=x" },
+      });
+    expect((await POST(mk(200 * MB + 1))).status).toBe(413);
+    // body không phải multipart hợp lệ -> qua kiểm tra sớm rồi mới lỗi 400 khi parse
+    expect((await POST(mk(200 * MB))).status).toBe(400);
   });
 
   it("Content-Length quá lớn -> 413 mà không đọc body", async () => {
     const r = req([{ name: "a.pdf", data: pdfBytes() }]);
-    const headers = new Headers({ "content-length": String(10 * 50 * MB + 5 * MB), "content-type": "multipart/form-data; boundary=x" });
+    const headers = new Headers({ "content-length": String(200 * MB + 5 * MB), "content-type": "multipart/form-data; boundary=x" });
     const big = new Request(r.url, { method: "POST", body: "x", headers });
     const spy = vi.spyOn(big, "formData");
     const res = await POST(big);
