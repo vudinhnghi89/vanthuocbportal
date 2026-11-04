@@ -30,6 +30,8 @@ describe.skipIf(mode !== "run")("buildSessionUser đọc lại role/active từ 
     const u = new URL(baseUrl!);
     u.pathname = `/${dbName}`;
     pool = new Pool({ connectionString: u.toString() });
+    // DROP DATABASE ... WITH (FORCE) in afterAll may kill idle backends (57P01); ignore the pool error event.
+    pool.on("error", () => {});
     db = drizzle(pool, { schema });
     await migrate(db, { migrationsFolder: path.resolve(__dirname, "../../drizzle") });
     [{ id: uid }] = await db

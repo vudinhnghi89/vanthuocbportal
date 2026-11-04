@@ -31,6 +31,8 @@ describe.skipIf(mode !== "run")("db schema, migration, seed", () => {
     const u = new URL(baseUrl!);
     u.pathname = `/${dbName}`;
     pool = new Pool({ connectionString: u.toString() });
+    // DROP DATABASE ... WITH (FORCE) in afterAll may kill idle backends (57P01); ignore the pool error event.
+    pool.on("error", () => {});
     db = drizzle(pool, { schema });
   });
 
