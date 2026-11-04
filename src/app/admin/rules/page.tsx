@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { listRules } from "@/server/rules";
 import { listUnits } from "@/server/units";
 import { RulesManager } from "./rules-manager";
@@ -10,6 +11,9 @@ export default async function RulesPage({ searchParams }: { searchParams: Promis
   return (
     <section>
       <h1>Quản lý quy tắc</h1>
+      <p>
+        <Link href="/admin/rules/history">Lịch sử chỉnh sửa</Link>
+      </p>
       <RulesManager rules={rules} units={units.filter((u) => u.active)} allUnits={units} q={q ?? ""} />
     </section>
   );

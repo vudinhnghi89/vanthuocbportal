@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
-import { rules, units } from "@/db/schema";
+import { ruleAudit, rules, units, users } from "@/db/schema";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@/db/schema";
 
@@ -96,9 +96,21 @@ async function assertActiveUnits(db: DbLike, ids: Array<number | null | undefine
   if (found.length !== wanted.length) throw new RuleError("invalid_unit");
 }
 
-// actorId được nhận ở mọi thao tác để T-1.3 ghi audit (cùng giao dịch); hiện chưa dùng.
+type AuditAction = (typeof ruleAudit.$inferInsert)["action"];
 
-export async function createRule(input: RuleInput, _actorId: number, db: DbLike = defaultDb): Promise<Rule> {
+/** Ghi đúng một bản audit trong giao dịch `tx` của thao tác; lỗi ở đây làm hỏng (rollback) cả thao tác. */
+async function writeAudit(
+  tx: DbLike,
+  ruleId: number,
+  action: AuditAction,
+  actorId: number,
+  before: Rule | null,
+  after: Rule | null,
+): Promise<void> {
+  await tx.insert(ruleAudit).values({ ruleId, action, actorId, before, after });
+}
+
+export async function createRule(input: RuleInput, actorId: number, db: DbLike = defaultDb): Promise<Rule> {
   // Mọi trường phải có mặt khi tạo: khóa thiếu bị coi là undefined -> bị cleanFields từ chối.
   const full = {
     issuer: input?.issuer,
@@ -113,6 +125,7 @@ export async function createRule(input: RuleInput, _actorId: number, db: DbLike 
   return db.transaction(async (tx) => {
     await assertActiveUnits(tx, [clean.mainUnitId, clean.infoUnitId]);
     const [row] = await tx.insert(rules).values(clean).returning();
+    await writeAudit(tx, row.id, "create", actorId, null, row);
     return row;
   });
 }
@@ -125,7 +138,7 @@ const EDITABLE = ["issuer", "docType", "title", "summary", "mainUnitId", "infoUn
 export async function updateRule(
   id: number,
   patch: RulePatch,
-  _actorId: number,
+  actorId: number,
   db: DbLike = defaultDb,
 ): Promise<RuleChange> {
   const clean = cleanFields(patch);
@@ -133,13 +146,15 @@ export async function updateRule(
     const [current] = await tx.select().from(rules).where(eq(rules.id, id)).for("update");
     if (!current) throw new RuleError("not_found");
     await assertActiveUnits(tx, [clean.mainUnitId, clean.infoUnitId]);
-    const differs = EDITABLE.some((k) => k in clean && clean[k] !== current[k]);
-    if (!differs) return { rule: current, before: current, changed: false };
+    const diffKeys = EDITABLE.filter((k) => k in clean && clean[k] !== current[k]);
+    if (diffKeys.length === 0) return { rule: current, before: current, changed: false };
     const [row] = await tx
       .update(rules)
       .set({ ...clean, updatedAt: sql`clock_timestamp()` })
       .where(eq(rules.id, id))
       .returning();
+    const action: AuditAction = diffKeys.length === 1 && diffKeys[0] === "active" ? "toggle" : "update";
+    await writeAudit(tx, id, action, actorId, current, row);
     return { rule: row, before: current, changed: true };
   });
 }
@@ -156,12 +171,50 @@ export async function toggleRule(
 }
 
 /** Trả dòng đã xóa (chính là `before` cho audit). */
-export async function deleteRule(id: number, _actorId: number, db: DbLike = defaultDb): Promise<Rule> {
+export async function deleteRule(id: number, actorId: number, db: DbLike = defaultDb): Promise<Rule> {
   return db.transaction(async (tx) => {
     const [row] = await tx.delete(rules).where(eq(rules.id, id)).returning();
     if (!row) throw new RuleError("not_found");
+    await writeAudit(tx, id, "delete", actorId, row, null);
     return row;
   });
+}
+
+export type AuditEntry = {
+  id: number;
+  ruleId: number;
+  action: AuditAction;
+  actorId: number | null;
+  actorUsername: string | null;
+  before: Rule | null;
+  after: Rule | null;
+  at: Date;
+};
+
+/** Lịch sử chỉnh sửa, mới nhất trước; ruleId bỏ trống = toàn bộ. */
+export async function listRuleAudit(
+  ruleId?: number,
+  opts: { limit?: number; offset?: number } = {},
+  db: DbLike = defaultDb,
+): Promise<AuditEntry[]> {
+  const rows = await db
+    .select({
+      id: ruleAudit.id,
+      ruleId: ruleAudit.ruleId,
+      action: ruleAudit.action,
+      actorId: ruleAudit.actorId,
+      actorUsername: users.username,
+      before: ruleAudit.before,
+      after: ruleAudit.after,
+      at: ruleAudit.at,
+    })
+    .from(ruleAudit)
+    .leftJoin(users, eq(users.id, ruleAudit.actorId))
+    .where(ruleId === undefined ? undefined : eq(ruleAudit.ruleId, ruleId))
+    .orderBy(desc(ruleAudit.at), desc(ruleAudit.id))
+    .limit(opts.limit ?? 200)
+    .offset(opts.offset ?? 0);
+  return rows as AuditEntry[];
 }
 
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, "\\$&");

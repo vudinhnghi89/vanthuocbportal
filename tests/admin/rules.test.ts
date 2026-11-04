@@ -13,9 +13,10 @@ vi.mock("@/db/client", () => ({
   },
 }));
 
-import { createRule, deleteRule, listRules, toggleRule, updateRule, RuleError, type RuleInput } from "@/server/rules";
+import { createRule, deleteRule, listRuleAudit, listRules, toggleRule, updateRule, RuleError, type RuleInput } from "@/server/rules";
 import { GET, POST } from "@/app/api/admin/rules/route";
 import { DELETE, PATCH } from "@/app/api/admin/rules/[id]/route";
+import { GET as AUDIT_GET } from "@/app/api/admin/rules/audit/route";
 
 const mode = dbSuiteMode(process.env);
 it.runIf(mode === "fail")("DATABASE_URL bắt buộc trong CI", () => {
@@ -55,7 +56,10 @@ describe.skipIf(mode !== "run")("rules", () => {
     authMock.mockReset();
     await t.db.delete(schema.documents);
     await t.db.delete(schema.rules);
+    await t.db.delete(schema.ruleAudit);
     await t.db.delete(schema.units);
+    await t.db.delete(schema.users);
+    await t.db.insert(schema.users).values({ id: 1, username: "admin1", passwordHash: "x", role: "admin" });
     const us = await t.db
       .insert(schema.units)
       .values([{ name: "Phòng A" }, { name: "Phòng B" }, { name: "Phòng Tắt", active: false }])
@@ -262,6 +266,103 @@ describe.skipIf(mode !== "run")("rules", () => {
 
       expect((await DELETE(json("DELETE", {}), ctx(r.id))).status).toBe(204);
       expect((await DELETE(json("DELETE", {}), ctx(r.id))).status).toBe(404);
+    });
+  });
+  describe("audit", () => {
+    const auditRows = (ruleId?: number) =>
+      t.db.select().from(schema.ruleAudit).orderBy(schema.ruleAudit.id).where(ruleId ? eq(schema.ruleAudit.ruleId, ruleId) : undefined);
+
+    it("create/update/toggle/delete mỗi thao tác đúng một bản audit với before/after đúng", async () => {
+      const r = await createRule(input({ title: "A" }), 1, t.db);
+      const u = await updateRule(r.id, { title: "B", priority: 2 }, 1, t.db);
+      const off = await toggleRule(r.id, false, 1, t.db);
+      const del = await deleteRule(r.id, 1, t.db);
+      const rows = await auditRows(r.id);
+      expect(rows.map((x) => x.action)).toEqual(["create", "update", "toggle", "delete"]);
+      expect(rows.every((x) => x.actorId === 1)).toBe(true);
+      const j = (x: unknown) => JSON.parse(JSON.stringify(x));
+      expect(rows[0]).toMatchObject({ before: null, after: j(r) });
+      expect(rows[1]).toMatchObject({ before: j(r), after: j(u.rule) });
+      expect(rows[2]).toMatchObject({ before: j(u.rule), after: j(off.rule) });
+      expect(rows[3]).toMatchObject({ before: j(del), after: null });
+    });
+
+    it("PATCH chỉ đổi active -> toggle; đổi thêm field khác -> update", async () => {
+      const r = await createRule(input(), 1, t.db);
+      await updateRule(r.id, { active: false }, 1, t.db);
+      await updateRule(r.id, { active: true, title: "X" }, 1, t.db);
+      expect((await auditRows(r.id)).map((x) => x.action)).toEqual(["create", "toggle", "update"]);
+    });
+
+    it("no-op và lỗi validate không ghi audit", async () => {
+      const r = await createRule(input(), 1, t.db);
+      await updateRule(r.id, { title: r.title }, 1, t.db);
+      await toggleRule(r.id, true, 1, t.db);
+      await expect(updateRule(r.id, { issuer: " " }, 1, t.db)).rejects.toBeInstanceOf(RuleError);
+      await expect(deleteRule(999999, 1, t.db)).rejects.toBeInstanceOf(RuleError);
+      expect(await auditRows()).toHaveLength(1);
+    });
+
+    it("audit lỗi -> cả thao tác rollback", async () => {
+      const r = await createRule(input({ title: "Gốc" }), 1, t.db);
+      const before = (await auditRows()).length;
+      // actor không tồn tại -> vi phạm FK ở bước ghi audit
+      await expect(createRule(input({ title: "Mới" }), 987654, t.db)).rejects.toThrow();
+      await expect(updateRule(r.id, { title: "Sửa" }, 987654, t.db)).rejects.toThrow();
+      await expect(deleteRule(r.id, 987654, t.db)).rejects.toThrow();
+      const rs = await listRules({}, t.db);
+      expect(rs).toHaveLength(1);
+      expect(rs[0]).toEqual(r);
+      expect(await auditRows()).toHaveLength(before);
+    });
+
+    it("lịch sử còn sau khi xóa rule; listRuleAudit mới nhất trước, có username, lọc/phân trang", async () => {
+      const a = await createRule(input({ title: "A" }), 1, t.db);
+      const b = await createRule(input({ title: "B" }), 1, t.db);
+      await updateRule(a.id, { title: "A2" }, 1, t.db);
+      await deleteRule(a.id, 1, t.db);
+      const all = await listRuleAudit(undefined, undefined, t.db);
+      expect(all.map((x) => [x.ruleId, x.action])).toEqual([[a.id, "delete"], [a.id, "update"], [b.id, "create"], [a.id, "create"]]);
+      expect(all[0].actorUsername).toBe("admin1");
+      expect((await listRuleAudit(a.id, undefined, t.db)).map((x) => x.action)).toEqual(["delete", "update", "create"]);
+      expect((await listRuleAudit(undefined, { limit: 2, offset: 1 }, t.db)).map((x) => x.action)).toEqual(["update", "create"]);
+    });
+
+    it("actor null vẫn liệt kê được", async () => {
+      const r = await createRule(input(), 1, t.db);
+      await t.db.update(schema.ruleAudit).set({ actorId: null }).where(eq(schema.ruleAudit.ruleId, r.id));
+      const [e] = await listRuleAudit(r.id, undefined, t.db);
+      expect(e.actorId).toBeNull();
+      expect(e.actorUsername).toBeNull();
+    });
+
+    it("hai updateRule đồng thời (khác field): đủ 2 audit, rule nhất quán, before của bản sau = after của bản trước", async () => {
+      const r = await createRule(input({ title: "T0" }), 1, t.db);
+      await Promise.all([updateRule(r.id, { title: "T1" }, 1, t.db), updateRule(r.id, { priority: 9 }, 1, t.db)]);
+      const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
+      expect(row).toMatchObject({ title: "T1", priority: 9 });
+      const ups = (await auditRows(r.id)).filter((x) => x.action === "update");
+      expect(ups).toHaveLength(2);
+      expect(ups[1].before).toEqual(ups[0].after);
+      expect(ups[1].after).toMatchObject({ title: "T1", priority: 9 });
+    });
+
+    it("API: audit cần admin; lọc ruleId; ruleId sai -> 400; PATCH/POST/DELETE ghi actor là admin phiên", async () => {
+      const req = (q = "") => new Request(`http://x/api/admin/rules/audit${q}`);
+      authMock.mockResolvedValue(null);
+      expect((await AUDIT_GET(req())).status).toBe(401);
+      authMock.mockResolvedValue(session("user"));
+      expect((await AUDIT_GET(req())).status).toBe(403);
+      authMock.mockResolvedValue(session("admin"));
+      const post = await POST(new Request("http://x/api/admin/rules", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input()) }));
+      const r = await post.json();
+      const res = await AUDIT_GET(req(`?ruleId=${r.id}`));
+      expect(res.status).toBe(200);
+      const list = await res.json();
+      expect(list).toHaveLength(1);
+      expect(list[0]).toMatchObject({ action: "create", actorId: 1, actorUsername: "admin1" });
+      expect((await AUDIT_GET(req("?ruleId=abc"))).status).toBe(400);
+      expect(await (await AUDIT_GET(req("?ruleId=999999"))).json()).toEqual([]);
     });
   });
 });
