@@ -14,7 +14,7 @@ export type RuleInput = {
   infoUnitId: number | null;
   priority: number;
 };
-export type RulePatch = Partial<RuleInput>;
+export type RulePatch = Partial<RuleInput> & { active?: boolean };
 export type RuleFilter = { q?: string; active?: boolean };
 /** db hoặc tx (drizzle lồng giao dịch bằng savepoint): T-1.3 truyền tx để ghi audit cùng giao dịch. */
 export type DbLike = NodePgDatabase<typeof schema>;
@@ -26,6 +26,7 @@ export type RuleErrorCode =
   | "invalid_summary"
   | "invalid_priority"
   | "invalid_unit"
+  | "invalid_active"
   | "not_found";
 
 const MESSAGES: Record<RuleErrorCode, string> = {
@@ -33,7 +34,8 @@ const MESSAGES: Record<RuleErrorCode, string> = {
   invalid_doc_type: "Loại văn bản không được để trống",
   invalid_title: "Tiêu đề không hợp lệ",
   invalid_summary: "Trích yếu không hợp lệ",
-  invalid_priority: "Độ ưu tiên phải là số nguyên",
+  invalid_priority: "Độ ưu tiên phải là số nguyên trong khoảng ±2147483647",
+  invalid_active: "Trạng thái bật/tắt không hợp lệ",
   invalid_unit: "Đơn vị phải tồn tại và đang hoạt động",
   not_found: "Không tìm thấy quy tắc",
 };
@@ -44,6 +46,10 @@ export class RuleError extends Error {
     this.name = "RuleError";
   }
 }
+
+const INT4_MAX = 2147483647;
+const isPriority = (v: unknown): v is number => Number.isSafeInteger(v) && Math.abs(v as number) <= INT4_MAX;
+const isUnitId = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) >= 1 && (v as number) <= INT4_MAX;
 
 function requiredText(v: unknown, code: RuleErrorCode): string {
   if (typeof v !== "string" || !v.trim()) throw new RuleError(code);
@@ -62,16 +68,20 @@ function cleanFields(p: RulePatch): RulePatch {
   if ("title" in p) out.title = optionalText(p.title, "invalid_title");
   if ("summary" in p) out.summary = optionalText(p.summary, "invalid_summary");
   if ("priority" in p) {
-    if (!Number.isSafeInteger(p.priority)) throw new RuleError("invalid_priority");
+    if (!isPriority(p.priority)) throw new RuleError("invalid_priority");
     out.priority = p.priority;
   }
   if ("mainUnitId" in p) {
-    if (!Number.isSafeInteger(p.mainUnitId)) throw new RuleError("invalid_unit");
+    if (!isUnitId(p.mainUnitId)) throw new RuleError("invalid_unit");
     out.mainUnitId = p.mainUnitId;
   }
   if ("infoUnitId" in p) {
-    if (p.infoUnitId !== null && !Number.isSafeInteger(p.infoUnitId)) throw new RuleError("invalid_unit");
+    if (p.infoUnitId !== null && !isUnitId(p.infoUnitId)) throw new RuleError("invalid_unit");
     out.infoUnitId = p.infoUnitId;
+  }
+  if ("active" in p) {
+    if (typeof p.active !== "boolean") throw new RuleError("invalid_active");
+    out.active = p.active;
   }
   return out;
 }
@@ -122,16 +132,27 @@ export async function updateRule(id: number, patch: RulePatch, _actorId: number,
   });
 }
 
-export async function toggleRule(id: number, active: boolean, _actorId: number, db: DbLike = defaultDb): Promise<Rule> {
-  if (typeof active !== "boolean") throw new RuleError("not_found");
+/**
+ * Bật/tắt trong một giao dịch, khóa dòng trước. Trả { rule, changed }: changed=false khi trạng thái
+ * đã đúng như yêu cầu (không ghi, không đổi updated_at) để T-1.3 bỏ qua audit.
+ */
+export async function toggleRule(
+  id: number,
+  active: boolean,
+  _actorId: number,
+  db: DbLike = defaultDb,
+): Promise<{ rule: Rule; changed: boolean }> {
+  if (typeof active !== "boolean") throw new RuleError("invalid_active");
   return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(rules).where(eq(rules.id, id)).for("update");
+    if (!current) throw new RuleError("not_found");
+    if (current.active === active) return { rule: current, changed: false };
     const [row] = await tx
       .update(rules)
       .set({ active, updatedAt: sql`clock_timestamp()` })
       .where(eq(rules.id, id))
       .returning();
-    if (!row) throw new RuleError("not_found");
-    return row;
+    return { rule: row, changed: true };
   });
 }
 

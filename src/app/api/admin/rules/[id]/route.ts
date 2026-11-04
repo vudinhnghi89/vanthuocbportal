@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/auth/guards";
-import { deleteRule, toggleRule, updateRule, type RulePatch } from "@/server/rules";
+import { deleteRule, updateRule, type RulePatch } from "@/server/rules";
 import { parseId, ruleErrorResponse } from "@/server/rule-http";
 import { readJson } from "@/server/unit-http";
 
@@ -14,17 +14,9 @@ export async function PATCH(req: Request, ctx: Ctx): Promise<Response> {
     const body = await readJson(req);
     if (!body) return Response.json({ error: "Dữ liệu không hợp lệ" }, { status: 400 });
     const patch: Record<string, unknown> = {};
-    for (const f of FIELDS) if (f in body) patch[f] = body[f];
-    const hasActive = "active" in body;
-    if (hasActive && typeof body.active !== "boolean") {
-      return Response.json({ error: "active không hợp lệ" }, { status: 400 });
-    }
-    if (Object.keys(patch).length === 0 && !hasActive) {
-      return Response.json({ error: "Không có thay đổi" }, { status: 400 });
-    }
-    let result;
-    if (Object.keys(patch).length > 0) result = await updateRule(id, patch as RulePatch, admin.user.id);
-    if (hasActive) result = await toggleRule(id, body.active as boolean, admin.user.id);
+    for (const f of [...FIELDS, "active"]) if (f in body) patch[f] = body[f];
+    if (Object.keys(patch).length === 0) return Response.json({ error: "Không có thay đổi" }, { status: 400 });
+    const result = await updateRule(id, patch as RulePatch, admin.user.id);
     return Response.json(result);
   } catch (e) {
     return ruleErrorResponse(e);

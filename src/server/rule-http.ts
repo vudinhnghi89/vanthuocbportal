@@ -8,6 +8,7 @@ const STATUS: Record<RuleErrorCode, number> = {
   invalid_summary: 400,
   invalid_priority: 400,
   invalid_unit: 400,
+  invalid_active: 400,
   not_found: 404,
 };
 

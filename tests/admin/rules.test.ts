@@ -98,17 +98,40 @@ describe.skipIf(mode !== "run")("rules", () => {
       expect(row).toMatchObject({ issuer: "Bộ Y tế", mainUnitId: mainId });
     });
 
-    it("toggleRule bật/tắt và làm updated_at tăng", async () => {
+    it("toggleRule bật/tắt thật làm updated_at tăng và changed=true", async () => {
       const r = await createRule(input(), 1, t.db);
       await sleep(15);
       const off = await toggleRule(r.id, false, 1, t.db);
-      expect(off.active).toBe(false);
-      expect(off.updatedAt.getTime()).toBeGreaterThan(r.updatedAt.getTime());
+      expect(off.changed).toBe(true);
+      expect(off.rule.active).toBe(false);
+      expect(off.rule.updatedAt.getTime()).toBeGreaterThan(r.updatedAt.getTime());
       await sleep(15);
       const on = await toggleRule(r.id, true, 1, t.db);
-      expect(on.active).toBe(true);
-      expect(on.updatedAt.getTime()).toBeGreaterThan(off.updatedAt.getTime());
+      expect(on.changed).toBe(true);
+      expect(on.rule.active).toBe(true);
+      expect(on.rule.updatedAt.getTime()).toBeGreaterThan(off.rule.updatedAt.getTime());
       await expect(toggleRule(999999, true, 1, t.db)).rejects.toMatchObject({ code: "not_found" });
+    });
+
+    it("toggleRule no-op: không ghi, updated_at giữ nguyên, changed=false", async () => {
+      const r = await createRule(input(), 1, t.db);
+      await sleep(15);
+      const same = await toggleRule(r.id, true, 1, t.db);
+      expect(same.changed).toBe(false);
+      expect(same.rule.updatedAt.getTime()).toBe(r.updatedAt.getTime());
+      const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
+      expect(row.updatedAt.getTime()).toBe(r.updatedAt.getTime());
+    });
+
+    it("updateRule nhận active cùng field trong một lần cập nhật", async () => {
+      const r = await createRule(input(), 1, t.db);
+      const u = await updateRule(r.id, { title: "T", active: false }, 1, t.db);
+      expect(u).toMatchObject({ title: "T", active: false });
+      await expect(updateRule(r.id, { title: "U", active: "x" as never }, 1, t.db)).rejects.toMatchObject({
+        code: "invalid_active",
+      });
+      const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
+      expect(row.title).toBe("T");
     });
 
     it("deleteRule xóa; không tồn tại -> not_found", async () => {
@@ -171,6 +194,30 @@ describe.skipIf(mode !== "run")("rules", () => {
       const ok = await POST(json("POST", body()));
       expect(ok.status).toBe(201);
       expect(await ok.json()).toMatchObject({ issuer: "Bộ Y tế", docType: "Công văn" });
+    });
+
+    it("admin: số ngoài miền int4 -> 400 (không phải 500)", async () => {
+      authMock.mockResolvedValue(session("admin"));
+      const r = await (await POST(json("POST", body()))).json();
+      for (const bad of [{ priority: 3000000000 }, { priority: -2147483648 }, { mainUnitId: 3000000000 }, { infoUnitId: 3000000000 }, { mainUnitId: 0 }]) {
+        expect((await POST(json("POST", body(bad)))).status).toBe(400);
+        expect((await PATCH(json("PATCH", bad), ctx(r.id))).status).toBe(400);
+      }
+      expect((await POST(json("POST", body({ priority: 2147483647 })))).status).toBe(201);
+      expect((await POST(json("POST", body({ priority: -2147483647 })))).status).toBe(201);
+    });
+
+    it("admin: PATCH nguyên tử — phần sau sai thì không đổi gì; kết hợp hợp lệ thì áp dụng", async () => {
+      authMock.mockResolvedValue(session("admin"));
+      const r = await (await POST(json("POST", body({ title: "Gốc" })))).json();
+      expect((await PATCH(json("PATCH", { title: "Mới", mainUnitId: offId }), ctx(r.id))).status).toBe(400);
+      expect((await PATCH(json("PATCH", { title: "Mới", active: "x" }), ctx(r.id))).status).toBe(400);
+      const [row] = await t.db.select().from(schema.rules).where(eq(schema.rules.id, r.id));
+      expect(row).toMatchObject({ title: "Gốc", active: true, mainUnitId: mainId });
+      expect(row.updatedAt.getTime()).toBe(new Date(r.updatedAt).getTime());
+      const ok = await PATCH(json("PATCH", { title: "Mới", active: false }), ctx(r.id));
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ title: "Mới", active: false });
     });
 
     it("admin: GET lọc, PATCH sửa/bật tắt, DELETE", async () => {
