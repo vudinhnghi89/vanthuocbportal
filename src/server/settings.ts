@@ -113,8 +113,17 @@ function cleanFields(input: DifySettingsInput): Fields {
 
 const FIELD_KEYS = ["baseUrl", "inputVar", "outputVarMd", "outputVarJson", "timeoutS", "retries"] as const;
 
+/** Allow-list of public fields only; never spread a DB row (it carries the ciphertext). */
 function maskedSnapshot(f: Fields, apiKeyMasked: string | null) {
-  return { ...f, apiKeyMasked };
+  return {
+    baseUrl: f.baseUrl,
+    inputVar: f.inputVar,
+    outputVarMd: f.outputVarMd,
+    outputVarJson: f.outputVarJson,
+    timeoutS: f.timeoutS,
+    retries: f.retries,
+    apiKeyMasked,
+  };
 }
 
 /** Đọc cấu hình đã giải mã cho worker; ném DifyNotConfiguredError nếu thiếu/chưa đủ. */
@@ -244,9 +253,13 @@ async function probe(cfg: DifySettings): Promise<{ ok: boolean; message: string 
     const res = await fetch(`${cfg.baseUrl.replace(/\/+$/, "")}/parameters`, {
       method: "GET",
       headers: { Authorization: `Bearer ${cfg.apiKey}` },
+      redirect: "manual",
       signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
     });
     await res.body?.cancel();
+    if (res.status >= 300 && res.status < 400) {
+      return { ok: false, message: "Dify trả về chuyển hướng, kiểm tra lại Base URL" };
+    }
     if (res.ok) return { ok: true, message: "Kết nối thành công" };
     if (res.status === 401 || res.status === 403) return { ok: false, message: "API key không hợp lệ" };
     return { ok: false, message: `Dify trả về lỗi HTTP ${res.status}` };

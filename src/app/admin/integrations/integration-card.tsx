@@ -3,18 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
-type View = {
-  baseUrl: string;
-  apiKeyMasked: string | null;
-  inputVar: string;
-  outputVarMd: string;
-  outputVarJson: string;
-  timeoutS: number;
-  retries: number;
-  updatedAt: string | null;
-  updatedBy: string | null;
-};
-type Defaults = { inputVar: string; outputVarMd: string; outputVarJson: string; timeoutS: number; retries: number };
+import { initialFormValues, type Defaults, type View } from "./form-values";
 
 export function IntegrationCard(props: {
   integrationKey: "dify_ocr" | "dify_agent";
@@ -26,13 +15,14 @@ export function IntegrationCard(props: {
   const { integrationKey: key, title, initial, defaults, help } = props;
   const router = useRouter();
   const v = initial;
-  const [baseUrl, setBaseUrl] = useState(v.baseUrl);
+  const init = initialFormValues(v, defaults);
+  const [baseUrl, setBaseUrl] = useState(init.baseUrl);
   const [apiKey, setApiKey] = useState("");
-  const [inputVar, setInputVar] = useState(v.inputVar || defaults.inputVar);
-  const [outputVarMd, setOutputVarMd] = useState(v.outputVarMd || defaults.outputVarMd);
-  const [outputVarJson, setOutputVarJson] = useState(v.outputVarJson || defaults.outputVarJson);
-  const [timeoutS, setTimeoutS] = useState(String(v.timeoutS || defaults.timeoutS));
-  const [retries, setRetries] = useState(String(v.retries || defaults.retries));
+  const [inputVar, setInputVar] = useState(init.inputVar);
+  const [outputVarMd, setOutputVarMd] = useState(init.outputVarMd);
+  const [outputVarJson, setOutputVarJson] = useState(init.outputVarJson);
+  const [timeoutS, setTimeoutS] = useState(init.timeoutS);
+  const [retries, setRetries] = useState(init.retries);
   const [masked, setMasked] = useState(v.apiKeyMasked);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);

@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 
-export type MockReply = { status?: number; body?: unknown; delayMs?: number };
+export type MockReply = { status?: number; body?: unknown; delayMs?: number; headers?: Record<string, string> };
 
 export type RecordedRequest = {
   method: string;
@@ -72,7 +72,7 @@ export async function startDifyMock(): Promise<DifyMock> {
       const reply = handler(rec, list.length);
       if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
       if (res.destroyed) return;
-      res.writeHead(reply.status ?? 200, { "content-type": "application/json" });
+      res.writeHead(reply.status ?? 200, { "content-type": "application/json", ...reply.headers });
       res.end(typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body ?? {}));
     });
   });

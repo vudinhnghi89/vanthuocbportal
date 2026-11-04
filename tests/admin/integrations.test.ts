@@ -185,6 +185,25 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       expect(rows.find((r) => r.beforeMasked)!.afterMasked).toMatchObject({ apiKeyChanged: false, timeoutS: 50 });
     });
 
+    it("audit không chứa ciphertext/key/trường thô của hàng DB sau nhiều lần lưu", async () => {
+      await saveDifySettings("dify_ocr", input(), 1, t.db);
+      const enc1 = (await rawRow()).apiKeyEnc!;
+      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-9999" }), 1, t.db);
+      const enc2 = (await rawRow()).apiKeyEnc!;
+      await saveDifySettings("dify_ocr", input({ apiKey: "", retries: 1 }), 1, t.db);
+      const rows = await audits();
+      expect(rows).toHaveLength(3);
+      const dump = JSON.stringify(rows);
+      for (const s of [enc1, enc2, KEY, "app-NEWKEY-9999", "SECRETKEY", "NEWKEY", "apiKeyEnc", "api_key_enc", "updatedBy"]) {
+        expect(dump).not.toContain(s);
+      }
+      const allowed = ["apiKeyMasked", "baseUrl", "inputVar", "outputVarJson", "outputVarMd", "retries", "timeoutS"];
+      for (const r of rows) {
+        expect(Object.keys(r.beforeMasked ?? {}).sort()).toEqual(r.beforeMasked ? allowed : []);
+        expect(Object.keys(r.afterMasked as object).sort()).toEqual([...allowed, "apiKeyChanged"].sort());
+      }
+    });
+
     it("lưu lại y hệt (kể cả cùng key) không ghi và không thêm audit", async () => {
       await saveDifySettings("dify_ocr", input(), 1, t.db);
       const before = await rawRow();
@@ -285,6 +304,19 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       expect(r.message).toContain("500");
       expect(r.message).not.toContain(KEY);
       expect(r.message).not.toContain("SECRETKEY");
+    });
+
+    it("không theo chuyển hướng 3xx", async () => {
+      await saveMock();
+      const target = await startDifyMock();
+      try {
+        mock.onParameters = () => ({ status: 302, headers: { location: `${target.url}/parameters` }, body: {} });
+        const r = await testConnection("dify_ocr", t.db);
+        expect(r).toEqual({ ok: false, message: "Dify trả về chuyển hướng, kiểm tra lại Base URL" });
+        expect(target.params).toHaveLength(0);
+      } finally {
+        await target.close();
+      }
     });
 
     it("không kết nối được (cổng đóng)", async () => {
