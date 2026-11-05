@@ -140,4 +140,30 @@ describe("manual status actions", () => {
     fireEvent.change(screen.getByLabelText("Trạng thái"), { target: { value: "done" } });
     expect(screen.queryByText("Đã cập nhật")).toBeNull();
   });
+
+  it("notice timer is cleared on unmount", async () => {
+    vi.useFakeTimers();
+    handler = withRow({ status: "classified" }, () => json({ id: ID, status: "unit_processing", changed: true }));
+    const { unmount } = render(<DocumentTable />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Chuyển đơn vị xử lý" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const before = vi.getTimerCount();
+    unmount();
+    expect(vi.getTimerCount()).toBeLessThan(before);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("notice clears when the search box changes", async () => {
+    handler = withRow({ status: "classified" }, () => json({ id: ID, status: "unit_processing", changed: true }));
+    render(<DocumentTable />);
+    fireEvent.click(await screen.findByRole("button", { name: "Chuyển đơn vị xử lý" }));
+    await screen.findByText("Đã cập nhật");
+    fireEvent.change(screen.getByLabelText("Tìm theo tên tệp"), { target: { value: "abc" } });
+    await waitFor(() => expect(screen.queryByText("Đã cập nhật")).toBeNull());
+  });
 });

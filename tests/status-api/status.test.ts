@@ -136,6 +136,52 @@ describe.skipIf(mode !== "run")("PATCH /api/documents/[id]/status", () => {
     expect(await events(id)).toHaveLength(0);
   });
 
+  it.each(["queued", "ocr_processing", "rule_checking", "failed", "done"] as const)(
+    "needs_manual on %s: 409 names the current status, not the needs-manual message",
+    async (st) => {
+      const id = await mk(st, true);
+      for (const to of ["unit_processing", "done"] as const) {
+        if (st === to) continue;
+        const res = await call(id, { to });
+        expect(res.status).toBe(409);
+        const { error } = await res.json();
+        expect(error).toContain(STATUS_LABELS[st]);
+        expect(error).not.toContain("Cần phân loại thủ công");
+      }
+      expect((await get(id)).status).toBe(st);
+      expect(await events(id)).toHaveLength(0);
+    },
+  );
+
+  it("unit_processing + needs_manual -> done succeeds", async () => {
+    const id = await mk("unit_processing", true);
+    const res = await call(id, { to: "done", from: "unit_processing" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id, status: "done", changed: true });
+    expect(await events(id)).toHaveLength(1);
+  });
+
+  it("unit_processing + needs_manual -> unit_processing is a no-op 200", async () => {
+    const id = await mk("unit_processing", true);
+    const res = await call(id, { to: "unit_processing" });
+    expect(await res.json()).toEqual({ id, status: "unit_processing", changed: false });
+  });
+
+  it("classified + needs_manual -> done: edge error naming current status", async () => {
+    const id = await mk("classified", true);
+    const res = await call(id, { to: "done" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain(STATUS_LABELS.classified);
+  });
+
+  it("stale `from` with the target status already reached -> 200 changed:false (documented ordering)", async () => {
+    const id = await mk("unit_processing");
+    const res = await call(id, { to: "unit_processing", from: "classified" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id, status: "unit_processing", changed: false });
+    expect(await events(id)).toHaveLength(0);
+  });
+
   it("unknown id 404, bad uuid 400, unauthenticated 401", async () => {
     expect((await call("00000000-0000-4000-8000-000000000000", { to: "done" })).status).toBe(404);
     expect((await call("123", { to: "done" })).status).toBe(400);

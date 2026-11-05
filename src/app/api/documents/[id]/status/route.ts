@@ -51,8 +51,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         if (expectedFrom && expectedFrom !== doc.status) {
           throw new ConflictError("Trạng thái đã thay đổi, vui lòng tải lại");
         }
-        if (doc.needsManual) throw new ConflictError("Cần phân loại thủ công trước khi chuyển đơn vị xử lý");
         if (MANUAL_EDGES[doc.status] !== to) throw new InvalidTransitionError(doc.status, to);
+        // Chỉ bước classified -> unit_processing cần phân loại xong; unit_processing -> done thì không.
+        if (doc.status === "classified" && doc.needsManual) {
+          throw new ConflictError("Cần phân loại thủ công trước khi chuyển đơn vị xử lý");
+        }
         const r = await transition(id, to, { actorId: session.user.id, note: "Cập nhật thủ công" }, tx);
         return { changed: r.changed, status: r.to };
       });
