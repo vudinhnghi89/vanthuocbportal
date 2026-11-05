@@ -7,3 +7,8 @@ dist/
 coverage/
 next-env.d.ts
 *.tsbuildinfo
+
+# Playwright E2E
+/e2e-results/
+/playwright-report/
+/test-results/

@@ -36,6 +36,7 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
+    "e2e-results",
     "node_modules",
     "dist"
   ]
