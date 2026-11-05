@@ -1,3 +1,4 @@
+import { requireAdminPage } from "@/auth/page-guard";
 import Link from "next/link";
 import { getRuleDraftFromDocument } from "@/server/rule-draft";
 import { listRules } from "@/server/rules";
@@ -13,6 +14,7 @@ export default async function RulesPage({
 }: {
   searchParams: Promise<{ q?: string; fromDocument?: string | string[] }>;
 }) {
+  await requireAdminPage();
   const { q, fromDocument: rawFrom } = await searchParams;
   const fromDocument = Array.isArray(rawFrom) ? rawFrom[0] : rawFrom;
   // Bản nháp từ văn bản: id sai/không tồn tại thì bỏ qua (form trống) kèm thông báo nhỏ.

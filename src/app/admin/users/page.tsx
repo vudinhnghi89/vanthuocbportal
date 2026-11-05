@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/auth/page-guard";
 import { listUsers } from "@/server/users";
 import { UsersManager } from "./users-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
+  await requireAdminPage();
   const users = await listUsers();
   return (
     <section>

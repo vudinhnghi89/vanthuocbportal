@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/auth/page-guard";
 import { listAliases } from "@/server/aliases";
 import { AliasesManager } from "./aliases-manager";
 
 export const dynamic = "force-dynamic";
 
 export default async function AliasesPage() {
+  await requireAdminPage();
   const aliases = await listAliases();
   return (
     <section>

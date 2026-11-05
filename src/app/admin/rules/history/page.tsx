@@ -1,3 +1,4 @@
+import { requireAdminPage } from "@/auth/page-guard";
 import Link from "next/link";
 import { listRuleAudit, type Rule } from "@/server/rules";
 
@@ -33,6 +34,7 @@ function diffLines(before: Rule | null, after: Rule | null): string[] {
 }
 
 export default async function RuleHistoryPage({ searchParams }: { searchParams: Promise<{ ruleId?: string }> }) {
+  await requireAdminPage();
   const { ruleId } = await searchParams;
   const id = ruleId && /^\d+$/.test(ruleId) ? Number(ruleId) : undefined;
   const entries = await listRuleAudit(id);

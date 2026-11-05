@@ -7,6 +7,7 @@ const getDraft = vi.fn();
 vi.mock("@/server/rules", () => ({ listRules: (...a: unknown[]) => listRules(...a) }));
 vi.mock("@/server/units", () => ({ listUnits: () => listUnits() }));
 vi.mock("@/server/rule-draft", () => ({ getRuleDraftFromDocument: (id: string) => getDraft(id) }));
+vi.mock("@/auth/page-guard", () => ({ requireAdminPage: () => Promise.resolve() }));
 vi.mock("next/link", () => ({ default: () => null }));
 vi.mock("@/app/admin/rules/rules-manager", () => ({ RulesManager: () => null }));
 

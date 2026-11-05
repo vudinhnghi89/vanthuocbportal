@@ -6,8 +6,8 @@ import { getDocumentDetail } from "@/server/document-detail";
 export const dynamic = "force-dynamic";
 
 export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
   const { user } = await requireUserPage();
+  const { id } = await params;
   const detail = await getDocumentDetail(id);
   if (!detail) notFound();
   return <DocumentDetailView detail={detail} isAdmin={user.role === "admin"} />;

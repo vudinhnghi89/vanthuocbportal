@@ -1,9 +1,11 @@
+import { requireAdminPage } from "@/auth/page-guard";
 import { getDifySettingsView } from "@/server/settings";
 import { IntegrationCard } from "./integration-card";
 
 export const dynamic = "force-dynamic";
 
 export default async function IntegrationsPage() {
+  await requireAdminPage();
   const [ocr, agent] = await Promise.all([getDifySettingsView("dify_ocr"), getDifySettingsView("dify_agent")]);
   const plain = (v: typeof ocr) => ({ ...v, updatedAt: v.updatedAt ? v.updatedAt.toISOString() : null });
   return (
