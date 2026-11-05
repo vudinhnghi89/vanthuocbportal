@@ -87,6 +87,17 @@ describe("GET /api/events", () => {
     expect(state.listeners.size).toBe(0);
   });
 
+  it("emits an `event: resync` frame with its own id", async () => {
+    const res = await GET(new Request("http://x/api/events"));
+    const r = reader(res);
+    await r.read();
+    for (const l of state.listeners) l(event);
+    for (const l of state.listeners) l({ type: "resync", at: "2026-01-01T00:00:00.000Z" });
+    await r.read();
+    expect(await r.read()).toBe("id: 2\nevent: resync\ndata: {}\n\n");
+    await r.cancel();
+  });
+
   it("aborting the request unsubscribes and ends the stream", async () => {
     const ctl = new AbortController();
     const res = await GET(new Request("http://x/api/events", { signal: ctl.signal }));

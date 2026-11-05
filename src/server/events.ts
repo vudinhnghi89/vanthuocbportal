@@ -23,6 +23,11 @@ export type DocumentEvent = {
   at: string;
 };
 
+/** Báo client tải lại: LISTEN vừa được thiết lập lại sau khi mất kết nối nên có thể đã lỡ sự kiện. */
+export type ResyncEvent = { type: "resync"; at: string };
+export type ServerEvent = DocumentEvent | ResyncEvent;
+export type Listener = (e: ServerEvent) => void;
+
 export type LoadedDocument = Pick<DocumentEvent, "filename" | "needsManual" | "matchMethod" | "mainUnit" | "infoUnit">;
 export type LoadDocument = (documentId: string) => Promise<LoadedDocument | null>;
 
@@ -75,7 +80,8 @@ async function defaultLoadDocument(documentId: string): Promise<LoadedDocument |
 
 // Trạng thái dùng chung trong một process web.
 let config: EventsConfig = {};
-const listeners = new Set<(e: DocumentEvent) => void>();
+const listeners = new Set<Listener>();
+let hasListened = false;
 let client: Client | null = null;
 let running = false;
 let generation = 0;
@@ -129,6 +135,10 @@ async function handleNotification(raw: string | undefined): Promise<void> {
     infoUnit: doc.infoUnit,
     at: new Date().toISOString(),
   };
+  broadcast(event);
+}
+
+function broadcast(event: ServerEvent): void {
   for (const l of [...listeners]) {
     try {
       l(event);
@@ -179,6 +189,9 @@ async function connect(): Promise<void> {
       return;
     }
     attempt = 0;
+    // Sau khi LISTEN lại thành công, các NOTIFY trong lúc mất kết nối đã mất: yêu cầu client tải lại.
+    if (hasListened) broadcast({ type: "resync", at: new Date().toISOString() });
+    hasListened = true;
   } catch {
     lost();
   }
@@ -194,6 +207,7 @@ function startListening(): void {
 
 function stopListening(): void {
   running = false;
+  hasListened = false;
   generation++;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
@@ -204,10 +218,10 @@ function stopListening(): void {
 }
 
 /** Đăng ký nhận sự kiện; kết nối LISTEN được mở khi có subscriber đầu tiên và đóng khi subscriber cuối rời đi. */
-export function subscribe(listener: (e: DocumentEvent) => void): () => void {
+export function subscribe(listener: Listener): () => void {
   if (listeners.size >= (config.maxSubscribers ?? MAX_SUBSCRIBERS)) throw new TooManySubscribersError();
   // Bọc để cùng một hàm đăng ký hai lần vẫn là hai subscriber độc lập.
-  const entry = (e: DocumentEvent) => listener(e);
+  const entry: Listener = (e) => listener(e);
   listeners.add(entry);
   startListening();
   return () => {

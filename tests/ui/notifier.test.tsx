@@ -62,6 +62,13 @@ describe("Notifier toasts", () => {
     )).toBeTruthy();
   });
 
+  it("resync adds no toast and no bell entry", () => {
+    render(<App />);
+    act(() => FakeEventSource.last.emit({}, "resync"));
+    expect(within(region()).queryByRole("listitem")).toBeNull();
+    expect(screen.queryByTestId("bell-count")).toBeNull();
+  });
+
   it("failed message", () => {
     render(<App />);
     emit({ status: "failed" });

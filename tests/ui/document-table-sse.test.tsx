@@ -87,6 +87,29 @@ describe("DocumentTable with SSE", () => {
     expect(docCalls()).toBe(m);
   });
 
+  it("slow safety poll every 120s while open, paused when the tab is hidden", async () => {
+    const setVisibility = (v: "visible" | "hidden") =>
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => v });
+    render(<DocumentTable />);
+    await flush();
+    act(() => FakeEventSource.last.open());
+    await flush(300);
+    const n = docCalls();
+    await flush(119_000);
+    expect(docCalls()).toBe(n);
+    await flush(1_000);
+    expect(docCalls()).toBe(n + 1);
+    setVisibility("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await flush(240_000);
+    expect(docCalls()).toBe(n + 1);
+    setVisibility("visible");
+    cleanup();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("clears every timer on unmount", async () => {
     const { unmount } = render(<DocumentTable />);
     await flush();

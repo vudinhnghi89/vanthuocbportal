@@ -81,6 +81,8 @@ function open() {
     }
     notifyChanged(parsed);
   });
+  // Server vừa LISTEN lại sau khi mất kết nối: có thể đã lỡ sự kiện, chỉ tải lại (không toast/chuông).
+  es.addEventListener("resync", () => notifyChanged(null));
   es.onerror = () => {
     setState("reconnecting");
     // Trình duyệt tự kết nối lại; nếu nó bỏ cuộc (CLOSED, ví dụ 401/503) thì mở lại sau một lúc.

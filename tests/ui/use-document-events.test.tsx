@@ -65,6 +65,18 @@ describe("useDocumentEvents", () => {
     window.removeEventListener("documents:changed", changed);
   });
 
+  it("a resync message dispatches documents:changed once and is not delivered as an event", () => {
+    const got: unknown[] = [];
+    const changed = vi.fn();
+    window.addEventListener("documents:changed", changed);
+    render(<Probe onEvent={(e) => got.push(e)} />);
+    act(() => FakeEventSource.last.open());
+    act(() => FakeEventSource.last.emit({}, "resync"));
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(got).toEqual([]);
+    window.removeEventListener("documents:changed", changed);
+  });
+
   it("dispatches one catch-up documents:changed on re-open, not on first open", () => {
     const changed = vi.fn();
     window.addEventListener("documents:changed", changed);

@@ -5,11 +5,12 @@ import { DOCUMENTS_CHANGED_EVENT, useDocumentEvents } from "@/hooks/useDocumentE
 
 export const DOCUMENTS_UPLOADED_EVENT = "documents:uploaded";
 export const POLL_INTERVAL_MS = 15_000;
+export const SLOW_POLL_INTERVAL_MS = 120_000;
 export const REFRESH_DEBOUNCE_MS = 300;
 
 /**
- * Gọi `refresh` (trì hoãn 300 ms) khi có sự kiện SSE hoặc tải lên. Chỉ polling định kỳ khi tab đang
- * hiển thị và kết nối SSE chưa mở (dự phòng).
+ * Gọi `refresh` (trì hoãn 300 ms) khi có sự kiện SSE hoặc tải lên. Polling định kỳ chỉ khi tab hiển thị:
+ * 15 s khi SSE chưa mở, 120 s (lưới an toàn) khi đã mở.
  */
 export function useDocumentsRefresh(refresh: () => void, intervalMs: number = POLL_INTERVAL_MS): void {
   const { connection } = useDocumentEvents();
@@ -36,14 +37,14 @@ export function useDocumentsRefresh(refresh: () => void, intervalMs: number = PO
     };
   }, []);
 
-  const polling = connection !== "open";
+  // Khi SSE đang mở vẫn polling chậm (lưới an toàn); khi không mở thì polling nhanh.
+  const pollMs = connection === "open" ? SLOW_POLL_INTERVAL_MS : intervalMs;
   useEffect(() => {
-    if (!polling) return;
     const call = () => ref.current();
     const visible = () => document.visibilityState !== "hidden";
     let timer: ReturnType<typeof setInterval> | null = null;
     const start = () => {
-      if (timer === null) timer = setInterval(() => visible() && call(), intervalMs);
+      if (timer === null) timer = setInterval(() => visible() && call(), pollMs);
     };
     const stop = () => {
       if (timer !== null) clearInterval(timer);
@@ -61,5 +62,5 @@ export function useDocumentsRefresh(refresh: () => void, intervalMs: number = PO
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [polling, intervalMs]);
+  }, [pollMs]);
 }

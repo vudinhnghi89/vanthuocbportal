@@ -1,5 +1,5 @@
 import { HttpError, requireUser, toErrorResponse } from "@/auth/guards";
-import { subscribe, TooManySubscribersError, type DocumentEvent } from "@/server/events";
+import { subscribe, TooManySubscribersError, type ServerEvent } from "@/server/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const enc = new TextEncoder();
-  let push: (e: DocumentEvent) => void = () => {};
+  let push: (e: ServerEvent) => void = () => {};
   let unsubscribe: () => void;
   try {
     unsubscribe = subscribe((e) => push(e));
@@ -66,7 +66,12 @@ export async function GET(request: Request): Promise<Response> {
         }
       }
       cleanup = close;
-      push = (e) => send(`id: ${++seq}\nevent: document\ndata: ${JSON.stringify(e)}\n\n`);
+      push = (e) =>
+        send(
+          e.type === "resync"
+            ? `id: ${++seq}\nevent: resync\ndata: {}\n\n`
+            : `id: ${++seq}\nevent: document\ndata: ${JSON.stringify(e)}\n\n`,
+        );
       if (request.signal.aborted) return close();
       request.signal.addEventListener("abort", close);
       send("retry: 3000\n\n: connected\n\n");

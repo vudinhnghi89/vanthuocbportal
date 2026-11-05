@@ -18,7 +18,7 @@ import {
   subscribe,
   subscriberCount,
   TooManySubscribersError,
-  type DocumentEvent,
+  type ServerEvent,
   type LoadDocument,
 } from "@/server/events";
 
@@ -79,7 +79,7 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
 
   it("a real transition() yields one enriched event with both units", async () => {
     const id = await mkDoc({ mainUnitId: mainId, infoUnitId: infoId, matchMethod: "single" });
-    const got: DocumentEvent[] = [];
+    const got: ServerEvent[] = [];
     subscribe((e) => got.push(e));
     await until(async () => (await listenerBackends()).length === 1);
     await transition(id, "classified", {}, t.db);
@@ -107,7 +107,7 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
 
   it("units null and needsManual carried through", async () => {
     const id = await mkDoc({ needsManual: true, matchMethod: "none" });
-    const got: DocumentEvent[] = [];
+    const got: ServerEvent[] = [];
     subscribe((e) => got.push(e));
     await until(async () => (await listenerBackends()).length === 1);
     await transition(id, "classified", {}, t.db);
@@ -121,8 +121,8 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
       filename: "x.pdf", needsManual: false, matchMethod: null, mainUnit: null, infoUnit: null,
     }));
     configureEvents({ loadDocument });
-    const a: DocumentEvent[] = [];
-    const b: DocumentEvent[] = [];
+    const a: ServerEvent[] = [];
+    const b: ServerEvent[] = [];
     subscribe((e) => a.push(e));
     subscribe((e) => b.push(e));
     await until(async () => (await listenerBackends()).length === 1);
@@ -139,7 +139,7 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
       filename: "x.pdf", needsManual: false, matchMethod: null, mainUnit: null, infoUnit: null,
     }));
     configureEvents({ loadDocument });
-    const got: DocumentEvent[] = [];
+    const got: ServerEvent[] = [];
     subscribe((e) => got.push(e));
     await until(async () => (await listenerBackends()).length === 1);
     const bad = [
@@ -153,11 +153,11 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
     await admin.query("select pg_notify($1, $2)", [DOC_EVENTS_CHANNEL, JSON.stringify({ documentId: id, from: "queued", to: "ocr_processing" })]);
     await until(() => got.length === 1);
     expect(loadDocument).toHaveBeenCalledTimes(1);
-    expect(got[0].status).toBe("ocr_processing");
+    expect(got[0]).toMatchObject({ status: "ocr_processing" });
   });
 
   it("skips events for documents that vanished", async () => {
-    const got: DocumentEvent[] = [];
+    const got: ServerEvent[] = [];
     subscribe((e) => got.push(e));
     await until(async () => (await listenerBackends()).length === 1);
     const ghost = "00000000-0000-4000-8000-000000000000";
@@ -165,13 +165,13 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
     const id = await mkDoc();
     await admin.query("select pg_notify($1, $2)", [DOC_EVENTS_CHANNEL, JSON.stringify({ documentId: id, from: "queued", to: "ocr_processing" })]);
     await until(() => got.length === 1);
-    expect(got[0].documentId).toBe(id);
+    expect(got[0]).toMatchObject({ documentId: id });
   });
 
   it("a throwing listener does not break others; unsubscribe removes", async () => {
     const id = await mkDoc();
-    const good: DocumentEvent[] = [];
-    const removed: DocumentEvent[] = [];
+    const good: ServerEvent[] = [];
+    const removed: ServerEvent[] = [];
     subscribe(() => {
       throw new Error("boom");
     });
@@ -208,20 +208,26 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
     offs.forEach((f) => f());
   });
 
-  it("reconnects after the listener backend is terminated and still delivers", async () => {
+  it("reconnects after the listener backend is terminated, sends exactly one resync, still delivers", async () => {
     const id = await mkDoc();
-    const got: DocumentEvent[] = [];
+    const got: ServerEvent[] = [];
     subscribe((e) => got.push(e));
     await until(async () => (await listenerBackends()).length === 1);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(got).toHaveLength(0); // không resync ở lần kết nối đầu
     const [pid] = await listenerBackends();
     await admin.query("select pg_terminate_backend($1)", [pid]);
     await until(async () => {
       const now = await listenerBackends();
       return now.length === 1 && now[0] !== pid;
     });
-    await transition(id, "classified", {}, t.db);
     await until(() => got.length === 1);
-    expect(got[0].status).toBe("classified");
+    expect(got[0]).toEqual({ type: "resync", at: expect.stringMatching(/^\d{4}-/) });
+    await transition(id, "classified", {}, t.db);
+    await until(() => got.length === 2);
+    expect(got[1]).toMatchObject({ type: "document.status", status: "classified" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(got.filter((e) => e.type === "resync")).toHaveLength(1);
   });
 
   it("stopEvents closes the connection, clears subscribers and pending timers", async () => {
