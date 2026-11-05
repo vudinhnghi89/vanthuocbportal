@@ -1,0 +1,21 @@
+import type { ReactNode } from "react";
+import { signOut } from "@/auth/config";
+import { requireUserPage } from "@/auth/page-guard";
+import { UserHeader } from "@/components/UserHeader";
+
+export const dynamic = "force-dynamic";
+
+async function signOutAction() {
+  "use server";
+  await signOut({ redirectTo: "/login" });
+}
+
+export default async function UserLayout({ children }: { children: ReactNode }) {
+  const { user } = await requireUserPage();
+  return (
+    <>
+      <UserHeader username={user.username} role={user.role} signOutAction={signOutAction} />
+      <main className="container">{children}</main>
+    </>
+  );
+}
