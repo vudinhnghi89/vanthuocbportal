@@ -29,6 +29,7 @@ Next.js 16 (App Router, TypeScript) + Auth.js (đăng nhập tên/mật khẩu) 
 | `docs/deploy.md` | **Hướng dẫn triển khai chung máy chủ với Dify**, hợp đồng Dify, HTTPS, vận hành, xử lý sự cố |
 | `docs/backup.md` | Sao lưu và phục hồi |
 | `docs/security-checklist.md` | Bảng kiểm soát bảo mật, route và guard |
+| `docs/known-issues.md` | Tồn đọng, giới hạn đã biết và những việc chỉ kiểm tra được trên server thật |
 | `docs/superpowers/specs/2026-11-04-van-thu-portal-design.md` | Thiết kế |
 | `docs/superpowers/plans/2026-11-04-van-thu-portal.md` | Kế hoạch triển khai |
 | `docs/tickets.md` | Danh mục ticket |
