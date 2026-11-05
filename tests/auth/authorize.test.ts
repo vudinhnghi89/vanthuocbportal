@@ -56,6 +56,11 @@ describe.skipIf(mode !== "run")("authorizeCredentials", () => {
     expect(await authorizeCredentials("ad", "wrong", db)).toBeNull();
   });
 
+  it("mật khẩu dài quá 256 ký tự -> null ngay, không chạm DB/argon2", async () => {
+    const boom = { select: () => { throw new Error("DB must not be touched"); } } as never;
+    expect(await authorizeCredentials("ad", "x".repeat(257), boom)).toBeNull();
+  });
+
   it("user không tồn tại -> null", async () => {
     expect(await authorizeCredentials("ghost", "right-pass", db)).toBeNull();
   });

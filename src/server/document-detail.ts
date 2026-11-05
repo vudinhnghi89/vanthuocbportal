@@ -2,12 +2,11 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import path from "node:path";
 import { db as defaultDb } from "@/db/client";
 import { documentEvents, documents, units, users } from "@/db/schema";
 import type { Status } from "@/lib/status";
 import { sanitizeFilename } from "./documents";
-import { isInsideDataDir } from "./storage";
+import { resolveInsideDataDir } from "./storage";
 import { DOC_EVENTS_CHANNEL, type DbLike } from "./status";
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,10 +40,11 @@ const unitRef = (id: number | null, name: string | null): UnitRef | null =>
 
 /** Đọc tối đa 400 KB đầu của markdown (chỉ khi nằm trong DATA_DIR), cắt còn 100_000 ký tự. */
 async function readMarkdown(mdPath: string | null): Promise<{ text: string; truncated: boolean }> {
-  if (!mdPath || !isInsideDataDir(mdPath)) return { text: "", truncated: false };
+  const real = mdPath ? await resolveInsideDataDir(mdPath, "md") : null;
+  if (!real) return { text: "", truncated: false };
   let handle: fsp.FileHandle | undefined;
   try {
-    handle = await fsp.open(path.resolve(mdPath), "r");
+    handle = await fsp.open(real, "r");
     const size = (await handle.stat()).size;
     const buf = Buffer.alloc(Math.min(size, MARKDOWN_MAX_BYTES));
     const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
@@ -61,9 +61,10 @@ async function readMarkdown(mdPath: string | null): Promise<{ text: string; trun
 }
 
 async function pdfExists(pdfPath: string): Promise<boolean> {
-  if (!isInsideDataDir(pdfPath, "pdf")) return false;
+  const real = await resolveInsideDataDir(pdfPath, "pdf");
+  if (!real) return false;
   try {
-    return (await fsp.stat(path.resolve(pdfPath))).isFile();
+    return (await fsp.stat(real)).isFile();
   } catch {
     return false;
   }
@@ -146,9 +147,9 @@ export async function getDocumentPdf(id: string, db: DbLike = defaultDb): Promis
     .select({ pdfPath: documents.pdfPath, filename: documents.filename })
     .from(documents)
     .where(eq(documents.id, id));
-  if (!row || !isInsideDataDir(row.pdfPath, "pdf")) return null;
+  const p = row ? await resolveInsideDataDir(row.pdfPath, "pdf") : null;
+  if (!row || !p) return null;
   try {
-    const p = path.resolve(row.pdfPath);
     const st = await fsp.stat(p);
     if (!st.isFile()) return null;
     return { path: p, filename: row.filename, size: st.size };
@@ -159,7 +160,7 @@ export async function getDocumentPdf(id: string, db: DbLike = defaultDb): Promis
 
 /** Content-Disposition inline an toàn: tên ASCII dự phòng + filename* UTF-8 đã mã hóa. */
 export function inlineDisposition(rawName: string): string {
-  const clean = sanitizeFilename(rawName).replace(/[\u0000-\u001f\u007f]/g, "");
+  const clean = sanitizeFilename(rawName);
   const ascii = clean.replace(/[^\x20-\x7e]/g, "_").replace(/["\\%;]/g, "_");
   const encoded = encodeURIComponent(clean).replace(/['()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
   return `inline; filename="${ascii}"; filename*=UTF-8''${encoded}`;

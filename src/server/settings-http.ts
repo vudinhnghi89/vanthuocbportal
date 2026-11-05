@@ -8,6 +8,7 @@ const STATUS: Record<SettingsErrorCode, number> = {
   invalid_retries: 400,
   invalid_api_key: 400,
   api_key_required: 400,
+  api_key_unreadable: 400,
 };
 
 export function settingsErrorResponse(e: unknown): Response {

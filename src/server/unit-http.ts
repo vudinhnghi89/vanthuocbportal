@@ -6,6 +6,7 @@ const STATUS: Record<UnitErrorCode, number> = {
   duplicate_name: 409,
   not_found: 404,
   secretariat_protected: 409,
+  in_use: 409,
 };
 
 /** HttpError/UnitError -> JSON Response; lỗi khác ném lại. */

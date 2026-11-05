@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
 import { USER_ROLES, users } from "@/db/schema";
-import { hashPassword } from "@/lib/password";
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, hashPassword } from "@/lib/password";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@/db/schema";
 
@@ -20,7 +20,7 @@ export type UserErrorCode =
 
 const MESSAGES: Record<UserErrorCode, string> = {
   invalid_username: "Tên đăng nhập phải từ 3 đến 50 ký tự",
-  invalid_password: "Mật khẩu phải có ít nhất 8 ký tự",
+  invalid_password: `Mật khẩu phải có từ ${MIN_PASSWORD_LENGTH} đến ${MAX_PASSWORD_LENGTH} ký tự`,
   invalid_role: "Vai trò phải là admin hoặc user",
   duplicate_username: "Tên đăng nhập đã tồn tại",
   not_found: "Không tìm thấy người dùng",
@@ -48,9 +48,8 @@ const isUniqueViolation = (e: unknown) => {
   return err?.code === UNIQUE_VIOLATION || err?.cause?.code === UNIQUE_VIOLATION;
 };
 
-const MIN_PASSWORD = 8;
 function checkPassword(p: unknown): string {
-  if (typeof p !== "string" || p.length < MIN_PASSWORD) throw new UserError("invalid_password");
+  if (typeof p !== "string" || p.length < MIN_PASSWORD_LENGTH || p.length > MAX_PASSWORD_LENGTH) throw new UserError("invalid_password");
   return p;
 }
 

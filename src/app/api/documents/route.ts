@@ -44,12 +44,13 @@ export async function POST(req: Request): Promise<Response> {
         results.push(uploadFailure(name, pre));
         continue;
       }
-      const buffer = Buffer.from(await file.arrayBuffer());
-      if (!hasPdfMagic(buffer)) {
+      // Chỉ đọc 5 byte đầu để kiểm tra magic trước khi nạp cả tệp vào bộ nhớ.
+      if (!hasPdfMagic(new Uint8Array(await file.slice(0, 5).arrayBuffer()))) {
         results.push(uploadFailure(name, "not_pdf"));
         continue;
       }
-      results.push(await createDocumentFromUpload({ filename: file.name, buffer, uploadedBy: session.user.id }));
+      const buffer = Buffer.from(await file.arrayBuffer());
+      results.push(await createDocumentFromUpload({ filename: name, buffer, uploadedBy: session.user.id }));
     }
 
     if (results.some((r) => r.ok)) return Response.json({ results }, { status: 201 });

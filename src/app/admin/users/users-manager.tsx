@@ -60,6 +60,7 @@ export function UsersManager({ users }: { users: Row[] }) {
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             required
             minLength={8}
+            maxLength={256}
             autoComplete="new-password"
           />
         </label>{" "}
@@ -108,6 +109,7 @@ export function UsersManager({ users }: { users: Row[] }) {
                       onChange={(e) => setResetting({ id: u.id, password: e.target.value })}
                       required
                       minLength={8}
+                      maxLength={256}
                       autoComplete="new-password"
                     />
                     <button type="submit">Lưu</button>

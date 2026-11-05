@@ -24,6 +24,8 @@ export function IntegrationCard(props: {
   const [timeoutS, setTimeoutS] = useState(init.timeoutS);
   const [retries, setRetries] = useState(init.retries);
   const [masked, setMasked] = useState(v.apiKeyMasked);
+  const [keyStatus, setKeyStatus] = useState(v.keyStatus);
+  const unreadable = keyStatus === "unreadable";
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const id = (n: string) => `${key}-${n}`;
@@ -53,6 +55,7 @@ export function IntegrationCard(props: {
       }
       setApiKey("");
       setMasked(data.apiKeyMasked ?? null);
+      setKeyStatus(data.keyStatus ?? "none");
       setStatus({ ok: true, text: "Đã lưu cấu hình" });
       router.refresh();
     } catch {
@@ -99,7 +102,15 @@ export function IntegrationCard(props: {
             required={!masked}
           />
           <br />
-          <small>Key hiện tại: {masked ?? "chưa có"}</small>
+          <small>Key hiện tại: {unreadable ? "không đọc được" : (masked ?? "chưa có")}</small>
+          {unreadable && (
+            <>
+              <br />
+              <small role="alert">
+                Không giải mã được API key đã lưu (APP_SECRET có thể đã đổi). Hãy nhập lại API key rồi lưu.
+              </small>
+            </>
+          )}
         </p>
         <p>
           <label htmlFor={id("in")}>Tên biến đầu vào</label>
@@ -129,7 +140,7 @@ export function IntegrationCard(props: {
         <button type="submit" disabled={busy}>
           Lưu cấu hình
         </button>{" "}
-        <button type="button" onClick={test} disabled={busy || !masked}>
+        <button type="button" onClick={test} disabled={busy || (!masked && !unreadable)}>
           Kiểm tra kết nối
         </button>
         {v.updatedAt && (

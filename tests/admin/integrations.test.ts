@@ -16,7 +16,9 @@ vi.mock("@/db/client", () => ({
 
 import {
   DifyNotConfiguredError,
+  KeyUnreadableError,
   SettingsError,
+  maskKey,
   getDifySettings,
   getDifySettingsView,
   saveDifySettings,
@@ -151,8 +153,8 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       await saveDifySettings("dify_ocr", input({ apiKey: "", timeoutS: 100 }), 1, t.db);
       expect((await rawRow()).apiKeyEnc).toBe(enc);
       expect((await getDifySettings("dify_ocr", t.db)).apiKey).toBe(KEY);
-      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-9999", timeoutS: 100 }), 1, t.db);
-      expect((await getDifySettings("dify_ocr", t.db)).apiKey).toBe("app-NEWKEY-9999");
+      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-1234569999", timeoutS: 100 }), 1, t.db);
+      expect((await getDifySettings("dify_ocr", t.db)).apiKey).toBe("app-NEWKEY-1234569999");
     });
 
     it("ghi đúng MỘT audit đã che, không chứa key/ciphertext", async () => {
@@ -166,12 +168,12 @@ describe.skipIf(mode !== "run")("integration settings", () => {
         apiKeyChanged: true,
         timeoutS: 300,
       });
-      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-9999", retries: 5 }), 1, t.db);
+      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-1234569999", retries: 5 }), 1, t.db);
       rows = await audits();
       expect(rows).toHaveLength(2);
       const enc = (await rawRow()).apiKeyEnc!;
       const dump = JSON.stringify(rows);
-      for (const secret of [KEY, "app-NEWKEY-9999", enc, "SECRETKEY", "NEWKEY"]) expect(dump).not.toContain(secret);
+      for (const secret of [KEY, "app-NEWKEY-1234569999", enc, "SECRETKEY", "NEWKEY"]) expect(dump).not.toContain(secret);
       const second = rows.find((r) => r.beforeMasked)!;
       expect(second.beforeMasked).toMatchObject({ apiKeyMasked: "app-****wxyz", retries: 3 });
       expect(second.afterMasked).toMatchObject({ apiKeyMasked: "app-****9999", apiKeyChanged: true, retries: 5 });
@@ -188,13 +190,13 @@ describe.skipIf(mode !== "run")("integration settings", () => {
     it("audit không chứa ciphertext/key/trường thô của hàng DB sau nhiều lần lưu", async () => {
       await saveDifySettings("dify_ocr", input(), 1, t.db);
       const enc1 = (await rawRow()).apiKeyEnc!;
-      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-9999" }), 1, t.db);
+      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-1234569999" }), 1, t.db);
       const enc2 = (await rawRow()).apiKeyEnc!;
       await saveDifySettings("dify_ocr", input({ apiKey: "", retries: 1 }), 1, t.db);
       const rows = await audits();
       expect(rows).toHaveLength(3);
       const dump = JSON.stringify(rows);
-      for (const s of [enc1, enc2, KEY, "app-NEWKEY-9999", "SECRETKEY", "NEWKEY", "apiKeyEnc", "api_key_enc", "updatedBy"]) {
+      for (const s of [enc1, enc2, KEY, "app-NEWKEY-1234569999", "SECRETKEY", "NEWKEY", "apiKeyEnc", "api_key_enc", "updatedBy"]) {
         expect(dump).not.toContain(s);
       }
       const allowed = ["apiKeyMasked", "baseUrl", "inputVar", "outputVarJson", "outputVarMd", "retries", "timeoutS"];
@@ -271,6 +273,67 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       expect((await getDifySettingsView("dify_ocr", t.db)).apiKeyMasked).toBe("****");
       await saveDifySettings("dify_ocr", input({ apiKey: "longkeywithoutprefix1234" }), 1, t.db);
       expect((await getDifySettingsView("dify_ocr", t.db)).apiKeyMasked).toBe("****1234");
+    });
+  });
+
+  describe("maskKey", () => {
+    it.each([
+      ["app-SECRETKEY-1234567890wxyz", "app-****wxyz"],
+      ["app-abcdefghijkl", "app-****ijkl"], // đúng 12 ký tự sau app-
+      ["app-abcdefghijk", "****"], // 11 ký tự sau app-
+      ["app-abcd", "****"],
+      ["abc", "****"],
+      ["", "****"],
+      ["abcdefghijkl", "****ijkl"],
+      ["abcdefghijk", "****"],
+    ])("%s -> %s", (k, expected) => {
+      expect(maskKey(k)).toBe(expected);
+    });
+  });
+
+  describe("API key không giải mã được (APP_SECRET đổi)", () => {
+    const UNREADABLE = "Không giải mã được API key đã lưu — kiểm tra APP_SECRET hoặc nhập lại key";
+    async function saveThenChangeSecret() {
+      await saveDifySettings("dify_ocr", input({ baseUrl: mock.url }), 1, t.db);
+      process.env.APP_SECRET = "z".repeat(48);
+    }
+    afterEach(() => {
+      process.env.APP_SECRET = "k".repeat(48);
+    });
+
+    it("view: keyStatus 'unreadable', không lộ ciphertext; cấu hình khác: 'ok' / 'none'", async () => {
+      expect((await getDifySettingsView("dify_ocr", t.db)).keyStatus).toBe("none");
+      await saveThenChangeSecret();
+      const v = await getDifySettingsView("dify_ocr", t.db);
+      expect(v.keyStatus).toBe("unreadable");
+      expect(v.apiKeyMasked).toBeNull();
+      expect(JSON.stringify(v)).not.toContain("v1:");
+      process.env.APP_SECRET = "k".repeat(48);
+      expect((await getDifySettingsView("dify_ocr", t.db)).keyStatus).toBe("ok");
+    });
+
+    it("getDifySettings ném KeyUnreadableError với thông điệp rõ ràng", async () => {
+      await saveThenChangeSecret();
+      const err = await getDifySettings("dify_ocr", t.db).catch((e) => e);
+      expect(err).toBeInstanceOf(KeyUnreadableError);
+      expect(err.message).toBe(UNREADABLE);
+    });
+
+    it("lưu không nhập key mới bị từ chối (không giữ ciphertext hỏng); nhập lại key thì được", async () => {
+      await saveThenChangeSecret();
+      const before = (await rawRow()).apiKeyEnc;
+      await expect(saveDifySettings("dify_ocr", input({ baseUrl: mock.url, apiKey: "", retries: 5 }), 1, t.db)).rejects.toMatchObject({
+        code: "api_key_unreadable",
+      });
+      expect((await rawRow()).apiKeyEnc).toBe(before);
+      await saveDifySettings("dify_ocr", input({ baseUrl: mock.url, apiKey: "app-NEWKEY-1234567890abcd" }), 1, t.db);
+      expect((await getDifySettingsView("dify_ocr", t.db)).keyStatus).toBe("ok");
+      expect((await getDifySettings("dify_ocr", t.db)).apiKey).toBe("app-NEWKEY-1234567890abcd");
+    });
+
+    it("testConnection báo đúng thông điệp", async () => {
+      await saveThenChangeSecret();
+      expect(await testConnection("dify_ocr", t.db)).toEqual({ ok: false, message: UNREADABLE });
     });
   });
 

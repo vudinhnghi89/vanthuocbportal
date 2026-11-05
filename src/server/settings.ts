@@ -23,7 +23,8 @@ export type SettingsErrorCode =
   | "invalid_timeout"
   | "invalid_retries"
   | "invalid_api_key"
-  | "api_key_required";
+  | "api_key_required"
+  | "api_key_unreadable";
 
 const MESSAGES: Record<SettingsErrorCode, string> = {
   invalid_base_url: "Địa chỉ Dify phải là URL http hoặc https hợp lệ",
@@ -32,7 +33,26 @@ const MESSAGES: Record<SettingsErrorCode, string> = {
   invalid_retries: "Số lần thử lại phải là số nguyên từ 0 đến 10",
   invalid_api_key: "API key không hợp lệ",
   api_key_required: "API key là bắt buộc khi cấu hình lần đầu",
+  api_key_unreadable: "API key đã lưu không đọc được (APP_SECRET đã đổi?): hãy nhập lại API key để lưu",
 };
+
+export const KEY_UNREADABLE_MESSAGE = "Không giải mã được API key đã lưu — kiểm tra APP_SECRET hoặc nhập lại key";
+
+/** API key đã lưu nhưng không giải mã được (APP_SECRET đổi hoặc dữ liệu hỏng). Không chứa key hay ciphertext. */
+export class KeyUnreadableError extends DifyConfigError {
+  constructor() {
+    super(KEY_UNREADABLE_MESSAGE);
+    this.name = "KeyUnreadableError";
+  }
+}
+
+function decryptStoredKey(enc: string): string {
+  try {
+    return decryptSecret(enc);
+  } catch {
+    throw new KeyUnreadableError();
+  }
+}
 
 export class SettingsError extends Error {
   constructor(public readonly code: SettingsErrorCode) {
@@ -55,6 +75,8 @@ export type DifySettingsInput = {
 export type DifySettingsView = {
   baseUrl: string;
   apiKeyMasked: string | null;
+  /** none: chưa có key; ok: đọc được; unreadable: có key nhưng không giải mã được (phải nhập lại). */
+  keyStatus: "none" | "ok" | "unreadable";
   inputVar: string;
   outputVarMd: string;
   outputVarJson: string;
@@ -69,10 +91,13 @@ type Fields = Omit<DifySettings, "apiKey">;
 
 const MAX_VAR = 100;
 
-/** Chỉ lộ 4 ký tự cuối: `app-****abcd`; khóa quá ngắn che hoàn toàn. */
+const MIN_MASKABLE = 12;
+
+/** Chỉ lộ 4 ký tự cuối (`app-****abcd`) khi phần sau tiền tố `app-` dài ít nhất 12 ký tự; còn lại che hoàn toàn. */
 export function maskKey(key: string): string {
-  if (key.length < 9) return "****";
-  return `${key.startsWith("app-") ? "app-" : ""}****${key.slice(-4)}`;
+  const prefix = key.startsWith("app-") ? "app-" : "";
+  if (key.length - prefix.length < MIN_MASKABLE) return "****";
+  return `${prefix}****${key.slice(-4)}`;
 }
 
 function maskedFromRow(row: Row): string | null {
@@ -81,6 +106,15 @@ function maskedFromRow(row: Row): string | null {
     return maskKey(decryptSecret(row.apiKeyEnc));
   } catch {
     return "****";
+  }
+}
+
+function keyStatusOf(row: Row): { keyStatus: DifySettingsView["keyStatus"]; apiKeyMasked: string | null } {
+  if (!row.apiKeyEnc) return { keyStatus: "none", apiKeyMasked: null };
+  try {
+    return { keyStatus: "ok", apiKeyMasked: maskKey(decryptSecret(row.apiKeyEnc)) };
+  } catch {
+    return { keyStatus: "unreadable", apiKeyMasked: null };
   }
 }
 
@@ -134,7 +168,7 @@ export async function getDifySettings(key: IntegrationKey, db: DbLike = defaultD
   }
   return {
     baseUrl: row.baseUrl,
-    apiKey: decryptSecret(row.apiKeyEnc),
+    apiKey: decryptStoredKey(row.apiKeyEnc),
     inputVar: row.inputVar,
     outputVarMd: row.outputVarMd,
     outputVarJson: row.outputVarJson,
@@ -154,6 +188,7 @@ export async function getDifySettingsView(key: IntegrationKey, db: DbLike = defa
     return {
       baseUrl: "",
       apiKeyMasked: null,
+      keyStatus: "none",
       inputVar: "",
       outputVarMd: "",
       outputVarJson: "",
@@ -166,7 +201,7 @@ export async function getDifySettingsView(key: IntegrationKey, db: DbLike = defa
   const { row } = r;
   return {
     baseUrl: row.baseUrl,
-    apiKeyMasked: maskedFromRow(row),
+    ...keyStatusOf(row),
     inputVar: row.inputVar,
     outputVarMd: row.outputVarMd,
     outputVarJson: row.outputVarJson,
@@ -192,6 +227,10 @@ export async function saveDifySettings(
   await db.transaction(async (tx) => {
     const [current] = await tx.select().from(integrationSettings).where(eq(integrationSettings.key, key)).for("update");
     if (!current?.apiKeyEnc && !newKey) throw new SettingsError("api_key_required");
+    // Key đã lưu mà không đọc được: không giữ ciphertext hỏng một cách im lặng, bắt buộc nhập lại.
+    if (current?.apiKeyEnc && !newKey && keyStatusOf(current).keyStatus === "unreadable") {
+      throw new SettingsError("api_key_unreadable");
+    }
 
     let keyChanged = false;
     let apiKeyEnc = current?.apiKeyEnc ?? null;
@@ -242,6 +281,7 @@ export async function testConnection(
     cfg = await getDifySettings(key, db);
   } catch (e) {
     if (e instanceof DifyNotConfiguredError) return { ok: false, message: "Chưa cấu hình đầy đủ: cần địa chỉ, API key và tên biến" };
+    if (e instanceof KeyUnreadableError) return { ok: false, message: e.message };
     return { ok: false, message: "Không đọc được cấu hình (kiểm tra APP_SECRET)" };
   }
   const result = await probe(cfg);

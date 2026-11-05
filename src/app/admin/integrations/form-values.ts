@@ -1,6 +1,7 @@
 export type View = {
   baseUrl: string;
   apiKeyMasked: string | null;
+  keyStatus: "none" | "ok" | "unreadable";
   inputVar: string;
   outputVarMd: string;
   outputVarJson: string;

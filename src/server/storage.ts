@@ -46,14 +46,37 @@ export async function saveMarkdown(text: string): Promise<string> {
   return final;
 }
 
-/** Đường dẫn (sau khi resolve) có nằm trong DATA_DIR (hoặc thư mục con `sub` của nó) không. */
-export function isInsideDataDir(filePath: string, sub?: string): boolean {
-  const root = sub ? path.join(/*turbopackIgnore: true*/ dataDir(), sub) : dataDir();
-  return path.resolve(filePath).startsWith(root + path.sep);
+/**
+ * Đường dẫn thật (sau khi giải symlink) nếu nằm trong DATA_DIR (hoặc thư mục con `sub`), ngược lại null.
+ * So sánh bằng realpath của cả gốc lẫn đích; đích chưa tồn tại thì dùng realpath của thư mục cha.
+ * Gốc không tồn tại -> null. Dùng kết quả này để mở tệp (thu hẹp cửa sổ TOCTOU).
+ */
+export async function resolveInsideDataDir(filePath: string, sub?: string): Promise<string | null> {
+  const lexicalRoot = sub ? path.join(/*turbopackIgnore: true*/ dataDir(), sub) : dataDir();
+  const lexicalTarget = path.resolve(filePath);
+  if (!lexicalTarget.startsWith(lexicalRoot + path.sep)) return null;
+  try {
+    const root = await fs.realpath(lexicalRoot);
+    let real: string;
+    try {
+      real = await fs.realpath(lexicalTarget);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") return null;
+      real = path.join(await fs.realpath(path.dirname(lexicalTarget)), path.basename(lexicalTarget));
+    }
+    return real.startsWith(root + path.sep) ? real : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Xóa tệp PDF; từ chối đường dẫn nằm ngoài DATA_DIR. Tệp không tồn tại thì bỏ qua. */
+/** Đường dẫn có nằm trong DATA_DIR (hoặc thư mục con `sub`) không, sau khi giải symlink. */
+export async function isInsideDataDir(filePath: string, sub?: string): Promise<boolean> {
+  return (await resolveInsideDataDir(filePath, sub)) !== null;
+}
+
+/** Xóa tệp PDF; chỉ chấp nhận đường dẫn trong `${DATA_DIR}/pdf` (kể cả sau symlink). Tệp không tồn tại thì bỏ qua. */
 export async function deletePdf(filePath: string): Promise<void> {
-  if (!isInsideDataDir(filePath)) throw new Error("Đường dẫn nằm ngoài thư mục dữ liệu");
+  if (!(await isInsideDataDir(filePath, "pdf"))) throw new Error("Đường dẫn nằm ngoài thư mục dữ liệu");
   await fs.rm(path.resolve(filePath), { force: true });
 }

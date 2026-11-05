@@ -89,6 +89,14 @@ describe.skipIf(mode !== "run")("users", () => {
       expect(await listUsers(t.db)).toHaveLength(0);
     });
 
+    it("mật khẩu tối đa 256 ký tự (createUser, resetPassword)", async () => {
+      expect(await codeOf(createUser("carol", "p".repeat(257), "user", t.db))).toBe("invalid_password");
+      await createUser("carol", "p".repeat(256), "user", t.db);
+      const u = (await listUsers(t.db))[0];
+      expect(await codeOf(resetPassword(u.id, "q".repeat(257), t.db))).toBe("invalid_password");
+      await resetPassword(u.id, "q".repeat(256), t.db);
+    });
+
     it("đăng nhập: không phân biệt hoa thường; user bị tắt không đăng nhập được", async () => {
       const u = await createUser("Dave", "password1", "user", t.db);
       expect(await authorizeCredentials("Dave", "password1", t.db)).toMatchObject({ id: u.id });

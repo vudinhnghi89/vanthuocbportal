@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, or } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
-import { units } from "@/db/schema";
+import { rules, units } from "@/db/schema";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@/db/schema";
 
@@ -8,9 +8,9 @@ export type Unit = typeof units.$inferSelect;
 export type UnitPatch = { name?: string; active?: boolean };
 type DbLike = NodePgDatabase<typeof schema>;
 
-export type UnitErrorCode = "invalid_name" | "duplicate_name" | "not_found" | "secretariat_protected";
+export type UnitErrorCode = "invalid_name" | "duplicate_name" | "not_found" | "secretariat_protected" | "in_use";
 
-const MESSAGES: Record<UnitErrorCode, string> = {
+const MESSAGES: Record<Exclude<UnitErrorCode, "in_use">, string> = {
   invalid_name: "Tên đơn vị không được để trống",
   duplicate_name: "Tên đơn vị đã tồn tại",
   not_found: "Không tìm thấy đơn vị",
@@ -18,8 +18,16 @@ const MESSAGES: Record<UnitErrorCode, string> = {
 };
 
 export class UnitError extends Error {
-  constructor(public readonly code: UnitErrorCode) {
-    super(MESSAGES[code]);
+  /** `ruleCount` chỉ có với code "in_use": số quy tắc hoạt động còn tham chiếu đơn vị. */
+  constructor(
+    public readonly code: UnitErrorCode,
+    public readonly ruleCount?: number,
+  ) {
+    super(
+      code === "in_use"
+        ? `Không thể tắt đơn vị: còn ${ruleCount ?? 0} quy tắc đang hoạt động dùng đơn vị này (làm đơn vị chính hoặc đơn vị nhận tin). Hãy đổi hoặc tắt các quy tắc đó trước`
+        : MESSAGES[code],
+    );
     this.name = "UnitError";
   }
 }
@@ -57,17 +65,26 @@ export async function updateUnit(id: number, patch: UnitPatch, db: DbLike = defa
   if (patch.name !== undefined) set.name = cleanName(patch.name);
   if (patch.active !== undefined) set.active = patch.active;
 
-  const [current] = await db.select().from(units).where(eq(units.id, id));
-  if (!current) throw new UnitError("not_found");
-  if (current.isSecretariat && set.active === false) throw new UnitError("secretariat_protected");
-  if (Object.keys(set).length === 0) return current;
-
-  try {
-    const [row] = await db.update(units).set(set).where(eq(units.id, id)).returning();
-    if (!row) throw new UnitError("not_found");
-    return row;
-  } catch (e) {
-    if (isUniqueViolation(e)) throw new UnitError("duplicate_name");
-    throw e;
-  }
+  // Giao dịch + khóa dòng đơn vị: INSERT/UPDATE rule tham chiếu đơn vị lấy khóa KEY SHARE nên bị chặn đến khi xong.
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(units).where(eq(units.id, id)).for("update");
+    if (!current) throw new UnitError("not_found");
+    if (current.isSecretariat && set.active === false) throw new UnitError("secretariat_protected");
+    if (Object.keys(set).length === 0) return current;
+    if (set.active === false && current.active) {
+      const [{ n }] = await tx
+        .select({ n: count() })
+        .from(rules)
+        .where(and(eq(rules.active, true), or(eq(rules.mainUnitId, id), eq(rules.infoUnitId, id))));
+      if (n > 0) throw new UnitError("in_use", n);
+    }
+    try {
+      const [row] = await tx.update(units).set(set).where(eq(units.id, id)).returning();
+      if (!row) throw new UnitError("not_found");
+      return row;
+    } catch (e) {
+      if (isUniqueViolation(e)) throw new UnitError("duplicate_name");
+      throw e;
+    }
+  });
 }

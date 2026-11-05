@@ -30,14 +30,19 @@ const fail = (filename: string, code: UploadErrorCode): UploadResult => ({
   code,
 });
 
-/** Chỉ giữ tên tệp (basename): bỏ thư mục, `..`, dấu `\`, ký tự điều khiển/NUL; tối đa 255 ký tự. */
+// C0, DEL, C1; bidi/hướng: U+200E/200F, U+202A–202E, U+2066–2069.
+const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
+
+/** Chỉ giữ tên tệp (basename): bỏ thư mục, `..`, `\`, ký tự điều khiển/bidi; tối đa 255 đơn vị UTF-16, không tách cặp surrogate. */
 export function sanitizeFilename(raw: string): string {
-  const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, "");
+  const cleaned = raw.replace(UNSAFE_CHARS, "");
   const base = cleaned.split(/[\\/]+/).filter(Boolean).pop()?.trim() ?? "";
   if (!base || base === "." || base === "..") return "document.pdf";
   if (base.length <= 255) return base;
   const ext = /\.pdf$/i.test(base) ? base.slice(-4) : "";
-  return base.slice(0, 255 - ext.length) + ext;
+  let head = base.slice(0, 255 - ext.length);
+  if (/[\ud800-\udbff]$/.test(head)) head = head.slice(0, -1); // cắt giữa cặp surrogate
+  return head + ext;
 }
 
 export const hasPdfMagic = (buf: Uint8Array): boolean =>
@@ -69,14 +74,15 @@ export async function createDocument(
 }
 
 /**
- * Một tệp tải lên: lưu file -> tạo dòng -> đẩy job OCR. Bất kỳ bước nào lỗi thì dọn dẹp
+ * Một tệp tải lên (`filename` đã được sanitizeFilename ở route; không làm sạch lần hai):
+ * lưu file -> tạo dòng -> đẩy job OCR. Bất kỳ bước nào lỗi thì dọn dẹp
  * (dòng + file) và trả lỗi chung, không lộ chi tiết nội bộ.
  */
 export async function createDocumentFromUpload(
   input: { filename: string; buffer: Buffer; uploadedBy: number },
   db: DbLike = defaultDb,
 ): Promise<UploadResult> {
-  const filename = sanitizeFilename(input.filename);
+  const { filename } = input;
   let pdfPath: string | null = null;
   let id: string | null = null;
   try {

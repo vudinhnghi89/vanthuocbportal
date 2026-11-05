@@ -40,6 +40,7 @@ describe.skipIf(mode !== "run")("units", () => {
   });
   beforeEach(async () => {
     authMock.mockReset();
+    await t.db.delete(schema.rules);
     await t.db.delete(schema.units);
     const [s] = await t.db
       .insert(schema.units)
@@ -91,6 +92,46 @@ describe.skipIf(mode !== "run")("units", () => {
         isSecretariat: true,
         active: true,
       });
+    });
+  });
+
+  describe("tắt đơn vị còn được quy tắc hoạt động tham chiếu", () => {
+    const mkRule = (main: number, info: number | null, active = true) =>
+      t.db.insert(schema.rules).values({ issuer: "UBND", docType: "CV", title: "t", mainUnitId: main, infoUnitId: info, active });
+
+    it("đơn vị chính hoặc đơn vị nhận tin của quy tắc ACTIVE -> in_use, nêu số quy tắc", async () => {
+      const a = await createUnit("Phòng A", t.db);
+      const b = await createUnit("Phòng B", t.db);
+      await mkRule(a.id, b.id);
+      await mkRule(a.id, null);
+      const errA = await updateUnit(a.id, { active: false }, t.db).catch((e) => e);
+      expect(errA).toBeInstanceOf(UnitError);
+      expect(errA).toMatchObject({ code: "in_use", ruleCount: 2 });
+      expect(errA.message).toMatch(/2 quy tắc/);
+      await expect(updateUnit(b.id, { active: false }, t.db)).rejects.toMatchObject({ code: "in_use", ruleCount: 1 });
+      const rows = await t.db.select().from(schema.units).where(eq(schema.units.id, a.id));
+      expect(rows[0].active).toBe(true);
+    });
+
+    it("quy tắc đã tắt không chặn; đổi tên đơn vị đang dùng vẫn được", async () => {
+      const a = await createUnit("Phòng A", t.db);
+      await mkRule(a.id, null, false);
+      expect(await updateUnit(a.id, { name: "Phòng A2" }, t.db)).toMatchObject({ name: "Phòng A2" });
+      expect(await updateUnit(a.id, { active: false }, t.db)).toMatchObject({ active: false });
+    });
+
+    it("API: PATCH active:false -> 409 với thông điệp tiếng Việt có số quy tắc", async () => {
+      authMock.mockResolvedValue(session("admin"));
+      const a = await createUnit("Phòng A", t.db);
+      await mkRule(a.id, null);
+      const r = await PATCH(
+        new Request("http://x", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ active: false }) }),
+        { params: Promise.resolve({ id: String(a.id) }) },
+      );
+      expect(r.status).toBe(409);
+      const body = await r.json();
+      expect(body).toMatchObject({ code: "in_use" });
+      expect(body.error).toMatch(/1 quy tắc/);
     });
   });
 
