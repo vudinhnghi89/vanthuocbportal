@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import os from "node:os";
+import { ADMIN_PASSWORD_PLACEHOLDER } from "@/lib/credentials";
 
 const ROOT = path.resolve(__dirname, "../..");
 const DOCS = ["docs/deploy.md", "README.md", "docs/backup.md"];
@@ -77,5 +80,37 @@ describe("biến môi trường trong docs/deploy.md", () => {
     const compose = read("docker-compose.yml");
     const example = read(".env.example");
     for (const n of uniq(/\$\{([A-Z][A-Z0-9_]+):\?/g, compose)) expect(example, n).toMatch(new RegExp(`^${n}=`, "m"));
+  });
+});
+
+describe("lệnh kiểm tra giá trị mẫu trong docs/deploy.md", () => {
+  const deploy = read("docs/deploy.md");
+  const cmd = /^(grep -nE '\^\[A-Z_\]\+=\.\*change-me' \.env)/m.exec(deploy)?.[1];
+
+  function grepOn(content: string): { status: number | null; out: string } {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vtp-envdoc-"));
+    try {
+      fs.writeFileSync(path.join(dir, ".env"), content);
+      const r = spawnSync("sh", ["-c", cmd!], { cwd: dir, encoding: "utf8" });
+      return { status: r.status, out: r.stdout };
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("placeholder trong .env.example khớp ADMIN_PASSWORD_PLACEHOLDER", () => {
+    expect(read(".env.example")).toContain(`ADMIN_PASSWORD=${ADMIN_PASSWORD_PLACEHOLDER}`);
+  });
+
+  it("lệnh có trong tài liệu, khớp .env.example gốc và không khớp bản đã điền", () => {
+    expect(cmd).toBeTruthy();
+    const example = read(".env.example");
+    const raw = grepOn(example);
+    expect(raw.status).toBe(0);
+    expect(raw.out).toContain("POSTGRES_PASSWORD=change-me");
+    const filled = example.replace(/change-me/g, "a1b2c3d4e5f6a7b8c9d0");
+    const ok = grepOn(filled);
+    expect(ok.status).toBe(1);
+    expect(ok.out).toBe("");
   });
 });

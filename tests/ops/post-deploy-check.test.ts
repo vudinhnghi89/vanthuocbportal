@@ -154,6 +154,17 @@ describe("post-deploy-check.sh với docker/curl giả", () => {
     expect(r.out).toMatch(/WARN\s+AUTH_URL/);
   });
 
+  it("từng bí mật còn change-me -> FAIL; ADMIN_PASSWORD mẫu chỉ WARN", () => {
+    for (const k of ["POSTGRES_PASSWORD=change-me", "DATABASE_URL=postgres://vanthu:change-me@postgres:5432/vanthu", "AUTH_SECRET=change-me"]) {
+      const r = run({}, GOOD_PS, `${k}\nAUTH_URL=http://10.0.0.5:8080\n`);
+      expect(r.status, k).toBe(1);
+      expect(r.out).toMatch(/FAIL\s+\.env còn giá trị mẫu/);
+    }
+    const w = run({}, GOOD_PS, "ADMIN_PASSWORD=change-me\nAUTH_URL=http://10.0.0.5:8080\n");
+    expect(w.status, w.out).toBe(0);
+    expect(w.out).toMatch(/WARN\s+ADMIN_PASSWORD.*Quản trị > Người dùng/);
+  });
+
   it("có dify-gateway: kiểm tra mạng từ worker; lỗi chỉ là WARN", () => {
     const r = run({ STUB_GATEWAY: "1" }, `${GOOD_PS}\ndify-gateway|running||0`);
     expect(r.status, r.out).toBe(0);

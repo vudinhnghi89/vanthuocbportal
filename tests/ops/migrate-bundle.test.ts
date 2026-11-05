@@ -107,6 +107,15 @@ describe.skipIf(mode !== "run")("dist/migrate.js (bundle chạy trong container 
     expect(await query(url, "select 1 from units")).toHaveLength(0);
   });
 
+  it("ADMIN_PASSWORD là giá trị mẫu: từ chối, thoát 1, không ghi gì", async () => {
+    const url = await freshDb();
+    const r = runBundle({ DATABASE_URL: url, MIGRATIONS_DIR: path.join(ROOT, "drizzle"), ADMIN_USERNAME: "quantri", ADMIN_PASSWORD: "change-me" });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("ADMIN_PASSWORD đang là giá trị mẫu — hãy đặt mật khẩu riêng");
+    expect(await query(url, "select 1 from users")).toHaveLength(0);
+    expect(await query(url, "select 1 from units")).toHaveLength(0);
+  });
+
   it("MIGRATIONS_DIR không tồn tại: lỗi rõ ràng, thoát 1", async () => {
     const url = await freshDb();
     const r = runBundle({ DATABASE_URL: url, MIGRATIONS_DIR: path.join(tmp, "khong-co"), ...good });

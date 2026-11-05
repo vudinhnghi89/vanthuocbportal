@@ -133,9 +133,12 @@ if [ -f .env ]; then
   mode="$(stat -c '%a' .env 2>/dev/null || echo "?")"
   if [ "$mode" = "600" ]; then report PASS ".env quyền truy cập" "600"; else report WARN ".env quyền truy cập" "là $mode, nên chmod 600 .env"; fi
   if grep -Eq '^(POSTGRES_PASSWORD|DATABASE_URL|APP_SECRET|AUTH_SECRET)=.*change-me' .env; then
-    report FAIL ".env còn giá trị mẫu" "một bí mật vẫn là change-me"
+    report FAIL ".env còn giá trị mẫu" "một bí mật (POSTGRES_PASSWORD/DATABASE_URL/APP_SECRET/AUTH_SECRET) vẫn là change-me"
   else
     report PASS ".env không còn giá trị mẫu" "ok"
+  fi
+  if grep -Eq '^ADMIN_PASSWORD=change-me' .env; then
+    report WARN "ADMIN_PASSWORD" "vẫn là giá trị mẫu: đổi mật khẩu admin tại Quản trị > Người dùng nếu vẫn là mật khẩu mẫu"
   fi
   if grep -Eq '^AUTH_URL=https?://(localhost|127\.0\.0\.1)' .env; then
     report WARN "AUTH_URL" "đang trỏ localhost; người dùng khác sẽ không đăng nhập được nếu truy cập bằng địa chỉ khác"

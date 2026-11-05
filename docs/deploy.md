@@ -132,7 +132,7 @@ Kiểm tra nhanh mà không in bí mật:
 
 ```bash
 stat -c '%a' .env                               # 600
-grep -c 'change-me' .env                        # 0 (còn giá trị mẫu là chưa xong)
+grep -nE '^[A-Z_]+=.*change-me' .env           # không in gì (còn dòng nào in ra là chưa thay giá trị mẫu)
 grep '^AUTH_URL=' .env                          # URL thật
 docker compose config -q && echo "compose hợp lệ"
 ```
@@ -325,14 +325,14 @@ Chạy lần lượt; mỗi bước có kết quả mong đợi. Dừng và báo
 4. `git branch -r && git checkout claude/serene-bohr-4c8y7s` (hoặc `git checkout main` nếu đã gộp, mục 3) : đã chuyển nhánh; `git rev-parse --short HEAD` in commit.
 5. `cp .env.example .env && chmod 600 .env` : file tạo, quyền 600.
 6. `openssl rand -hex 24; openssl rand -hex 32; openssl rand -hex 32` : ba chuỗi cho `POSTGRES_PASSWORD`, `APP_SECRET`, `AUTH_SECRET`; điền vào `.env` cùng `DATABASE_URL`, `AUTH_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (mục 4).
-7. `grep -c 'change-me' .env; grep '^AUTH_URL=' .env` : `0` và URL thật.
+7. `grep -nE '^[A-Z_]+=.*change-me' .env; grep '^AUTH_URL=' .env` : lệnh đầu **không in gì** (dòng nào in ra là còn giá trị mẫu, kể cả `ADMIN_PASSWORD`); lệnh sau in URL thật.
 8. `docker network ls` và `docker ps --format '{{.Names}}\t{{.Networks}}'` : xác định `DIFY_NETWORK`, ghi vào `.env` cùng `DIFY_UPSTREAM` và `COMPOSE_FILE=docker-compose.yml:docker-compose.dify.yml` (mục 5).
 9. `docker compose config -q && echo OK` : in `OK` (không báo thiếu biến).
 10. `docker compose up -d --build` : build xong, không lỗi; mất 5-10 phút lần đầu.
 11. `docker compose logs migrate` : thấy `migration OK` và `seed OK`.
 12. `docker compose ps -a` : `postgres`, `web`, `worker` healthy; `caddy` running; `migrate` exited (0); `dify-gateway` running nếu dùng cách A.
 13. `scripts/post-deploy-check.sh` : bảng không có FAIL, mã thoát 0. Lưu đầu ra để báo cáo.
-14. Mở `AUTH_URL` trong trình duyệt, đăng nhập admin, đổi mật khẩu admin (Quản trị > Người dùng) : đăng nhập thành công, không bị đưa về `/login`.
+14. Mở `AUTH_URL` trong trình duyệt, đăng nhập admin và **đổi mật khẩu admin ngay sau lần đăng nhập đầu** (Quản trị > Người dùng > Đặt lại mật khẩu) : đăng nhập thành công, không bị đưa về `/login`.
 15. Quản trị > Cấu hình tích hợp: điền hai thẻ theo mục 8, bấm "Kiểm tra kết nối" ở cả hai : cả hai báo thành công.
 16. Tạo đơn vị, rule, bí danh cơ quan (mục 7.2), tải lên PDF thử : văn bản đi hết luồng; "Xem file PDF gốc" hiển thị trên Chrome/Edge/Firefox (nếu trống: mục 7.2 bước 6).
 17. Cài sao lưu định kỳ theo `docs/backup.md` mục 3 (`scripts/backup.sh` trong cron/systemd) và chạy thử một lần: `scripts/backup.sh --dir /mnt/backup/vtp` : thư mục sao lưu có `db.dump`, `data.tar.gz`, `SHA256SUMS`, `MANIFEST`.

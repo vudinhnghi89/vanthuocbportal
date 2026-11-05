@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "../lib/password";
-import { MAX_USERNAME_LENGTH, MIN_USERNAME_LENGTH, isValidPassword, isValidUsername } from "../lib/credentials";
+import { ADMIN_PASSWORD_PLACEHOLDER, MAX_USERNAME_LENGTH, MIN_USERNAME_LENGTH, isValidPassword, isValidUsername } from "../lib/credentials";
 
 export const SECRETARIAT_NAME = "Ban thư ký";
 
@@ -22,6 +22,9 @@ export async function seed(db: NodePgDatabase<typeof schema>, env: SeedEnv) {
   if (createAdmin) {
     if (!isValidUsername(name)) {
       throw new Error(`ADMIN_USERNAME phải có từ ${MIN_USERNAME_LENGTH} đến ${MAX_USERNAME_LENGTH} ký tự`);
+    }
+    if (password === ADMIN_PASSWORD_PLACEHOLDER) {
+      throw new Error("ADMIN_PASSWORD đang là giá trị mẫu — hãy đặt mật khẩu riêng");
     }
     if (!isValidPassword(password)) {
       throw new Error(`ADMIN_PASSWORD phải có từ ${MIN_PASSWORD_LENGTH} đến ${MAX_PASSWORD_LENGTH} ký tự`);

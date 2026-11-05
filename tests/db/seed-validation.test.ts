@@ -1,3 +1,4 @@
+import { ADMIN_PASSWORD_PLACEHOLDER } from "@/lib/credentials";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -39,6 +40,13 @@ describe.skipIf(mode !== "run")("seed: kiểm tra thông tin admin", () => {
 
   it("mật khẩu 7 ký tự: ném lỗi, không ghi gì", async () => {
     await expect(seed(t.db, env({ ADMIN_PASSWORD: "1234567" }))).rejects.toThrow(/ADMIN_PASSWORD/);
+    expect(await counts()).toEqual({ users: 0, units: 0 });
+  });
+
+  it("ADMIN_PASSWORD là giá trị mẫu của .env.example: từ chối, không ghi gì", async () => {
+    await expect(seed(t.db, env({ ADMIN_PASSWORD: ADMIN_PASSWORD_PLACEHOLDER }))).rejects.toThrow(
+      "ADMIN_PASSWORD đang là giá trị mẫu — hãy đặt mật khẩu riêng",
+    );
     expect(await counts()).toEqual({ users: 0, units: 0 });
   });
 

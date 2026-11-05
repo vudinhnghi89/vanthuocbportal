@@ -7,3 +7,6 @@ export const isValidUsername = (u: unknown): u is string =>
   typeof u === "string" && u.length >= MIN_USERNAME_LENGTH && u.length <= MAX_USERNAME_LENGTH;
 export const isValidPassword = (p: unknown): p is string =>
   typeof p === "string" && p.length >= MIN_PASSWORD_LENGTH && p.length <= MAX_PASSWORD_LENGTH;
+
+/** Giá trị mẫu của ADMIN_PASSWORD trong .env.example; seed từ chối tạo admin đầu tiên với mật khẩu này. */
+export const ADMIN_PASSWORD_PLACEHOLDER = "change-me";
