@@ -27,6 +27,25 @@ export async function savePdf(buffer: Buffer): Promise<string> {
   return final;
 }
 
+/**
+ * Lưu markdown OCR vào `${DATA_DIR}/md/<uuid>.md`, ghi nguyên tử như savePdf. Trả về đường dẫn tuyệt đối.
+ */
+export async function saveMarkdown(text: string): Promise<string> {
+  const dir = path.join(dataDir(), "md");
+  await fs.mkdir(dir, { recursive: true, mode: 0o750 });
+  const id = randomUUID();
+  const final = path.join(dir, `${id}.md`);
+  const tmp = path.join(dir, `.${id}.tmp`);
+  try {
+    await fs.writeFile(tmp, text, { mode: 0o640, flag: "wx", encoding: "utf8" });
+    await fs.rename(tmp, final);
+  } catch (e) {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+    throw e;
+  }
+  return final;
+}
+
 /** Xóa tệp PDF; từ chối đường dẫn nằm ngoài DATA_DIR. Tệp không tồn tại thì bỏ qua. */
 export async function deletePdf(filePath: string): Promise<void> {
   const root = dataDir();

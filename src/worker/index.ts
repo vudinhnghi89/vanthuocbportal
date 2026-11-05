@@ -1,11 +1,9 @@
 import { SHUTDOWN_TIMEOUT_MS } from "./config";
+import { handleDeadOcrJob, handleOcrJob } from "./jobs/ocr";
 import { startOcrWorker } from "./queue";
 
 async function main() {
-  // Placeholder: T-4.1 thay bằng handleOcrJob. Chỉ log id văn bản, không log nội dung.
-  const worker = await startOcrWorker(async (documentId) => {
-    console.log(`[worker] ocr job for document ${documentId}`);
-  });
+  const worker = await startOcrWorker(handleOcrJob, { deadHandler: (documentId) => handleDeadOcrJob(documentId) });
   console.log("[worker] started");
 
   let stopping = false;

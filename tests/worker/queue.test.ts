@@ -6,6 +6,7 @@ import * as schema from "@/db/schema";
 import { dbSuiteMode } from "../db/require-db";
 import { createTestDb } from "../db/test-db";
 import {
+  OCR_DEAD_QUEUE,
   OCR_QUEUE,
   enqueueOcr,
   getBoss,
@@ -173,4 +174,57 @@ describe.skipIf(mode !== "run")("ocr queue", () => {
     await w.stop();
     stopWorker = undefined;
   }, 30_000);
+  it("passes retryCount/retryLimit; a handler that marks failed on the last attempt is run exactly 3 times, failing once", async () => {
+    const id = await newDoc("always-throws");
+    const metas: Array<{ retryCount: number; retryLimit: number }> = [];
+    let failedMarks = 0;
+    const w = await startOcrWorker(async (_id, meta) => {
+      metas.push(meta);
+      if (meta.retryCount >= meta.retryLimit) {
+        failedMarks++; // như handleOcrJob: đánh dấu failed rồi trả về, KHÔNG throw
+        return;
+      }
+      throw new Error("transient");
+    }, opts);
+    stopWorker = () => w.stop();
+    await enqueueOcr(id, { ...opts, retryLimit: 2 });
+    await waitFor(() => failedMarks === 1);
+    await sleep(1500);
+    expect(metas).toEqual([
+      { retryCount: 0, retryLimit: 2 },
+      { retryCount: 1, retryLimit: 2 },
+      { retryCount: 2, retryLimit: 2 },
+    ]);
+    expect(failedMarks).toBe(1);
+    const jobs = await (await getBoss(opts)).findJobs(OCR_QUEUE, { key: id });
+    expect(jobs.map((j) => j.state)).toEqual(["completed"]);
+    await w.stop();
+    stopWorker = undefined;
+    await getBoss(opts);
+  }, 20_000);
+
+  it("a job that expires with no retries left reaches the dead-letter worker", async () => {
+    const id = await newDoc("expires");
+    const dead: string[] = [];
+    let release: () => void = () => {};
+    const hang = new Promise<void>((r) => (release = r));
+    const w = await startOcrWorker(
+      async () => {
+        await hang;
+      },
+      { ...opts, deadHandler: async (d) => void dead.push(d) },
+    );
+    stopWorker = () => w.stop();
+    await enqueueOcr(id, { ...opts, retryLimit: 0, expireInSeconds: 2 });
+    try {
+      await waitFor(() => dead.length === 1, 15_000);
+    } finally {
+      release();
+    }
+    expect(dead).toEqual([id]);
+    const boss = await getBoss(opts);
+    expect((await boss.findJobs(OCR_DEAD_QUEUE, { key: id })).length).toBeGreaterThanOrEqual(1);
+    await w.stop();
+    stopWorker = undefined;
+  }, 25_000);
 });
