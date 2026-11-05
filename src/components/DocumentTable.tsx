@@ -19,6 +19,7 @@ type ListResponse = { items: DocumentListItem[]; total: number; page: number; pa
 type UnitOption = { id: number; name: string };
 
 const PAGE_SIZE = 20;
+const NOTICE_MS = 6000;
 const SEARCH_DEBOUNCE_MS = 300;
 const EMPTY_FILTERS = { status: "", unit: "", needsManual: false, from: "", to: "" };
 type Filters = typeof EMPTY_FILTERS;
@@ -57,6 +58,7 @@ export function DocumentTable() {
   const [units, setUnits] = useState<UnitOption[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
+  const inFlight = useRef(new Set<string>());
 
   const rangeInvalid = Boolean(filters.from && filters.to && filters.from > filters.to);
 
@@ -123,6 +125,13 @@ export function DocumentTable() {
   const refreshSilently = useCallback(() => void load(), [load]);
   useDocumentsRefresh(refreshSilently);
 
+  // Thông báo tự tắt sau NOTICE_MS; timeout được dọn khi đổi thông báo hoặc unmount.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   // Danh sách đơn vị cho bộ lọc.
   useEffect(() => {
     const ctl = new AbortController();
@@ -146,6 +155,7 @@ export function DocumentTable() {
       if (next === qRef.current) return;
       setQ(next);
       setPage(1);
+      setNotice(null);
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [searchInput]);
@@ -153,12 +163,14 @@ export function DocumentTable() {
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((f) => ({ ...f, [key]: value }));
     setPage(1);
+    setNotice(null);
   };
   const clearFilters = () => {
     setFilters(EMPTY_FILTERS);
     setSearchInput("");
     setQ("");
     setPage(1);
+    setNotice(null);
   };
   const hasFilters = Boolean(q || searchInput || JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS));
 
@@ -175,6 +187,31 @@ export function DocumentTable() {
     } catch {
       setNotice("Không thể kết nối máy chủ, vui lòng thử lại");
     } finally {
+      setRetrying((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+    }
+    void load();
+  };
+
+  const setStatus = async (id: string, from: Status, to: "unit_processing" | "done") => {
+    if (inFlight.current.has(id)) return;
+    inFlight.current.add(id);
+    setRetrying((s) => new Set(s).add(id));
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/documents/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, from }),
+      });
+      setNotice(res.ok ? "Đã cập nhật" : await errorMessage(res, "Không thể cập nhật trạng thái"));
+    } catch {
+      setNotice("Không thể kết nối máy chủ, vui lòng thử lại");
+    } finally {
+      inFlight.current.delete(id);
       setRetrying((s) => {
         const n = new Set(s);
         n.delete(id);
@@ -308,7 +345,30 @@ export function DocumentTable() {
                           Chạy lại
                         </button>
                       )}
-                      {/* T-6.3: gắn điều khiển đổi trạng thái (đơn vị / Ban thư ký) tại đây. */}
+                      {d.status === "classified" && !d.needsManual && (
+                        <button
+                          type="button"
+                          disabled={retrying.has(d.id)}
+                          onClick={() => void setStatus(d.id, d.status, "unit_processing")}
+                        >
+                          Chuyển đơn vị xử lý
+                        </button>
+                      )}
+                      {d.status === "unit_processing" && (
+                        <button
+                          type="button"
+                          disabled={retrying.has(d.id)}
+                          onClick={() => void setStatus(d.id, d.status, "done")}
+                        >
+                          Hoàn tất
+                        </button>
+                      )}
+                      {d.status === "classified" && d.needsManual && (
+                        <span aria-disabled="true" className="muted">
+                          Cần phân loại
+                        </span>
+                      )}
+                      {/* T-6.5: thêm liên kết "Phân loại" cho văn bản classified + needsManual tại đây. */}
                     </td>
                   </tr>
                 ))}
