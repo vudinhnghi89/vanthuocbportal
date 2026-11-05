@@ -124,7 +124,6 @@ export function DocumentDetailView({ detail, isAdmin }: { detail: DocumentDetail
 
       {canClassify && <ClassifyForm detail={detail} onDone={(msg) => setNotice(msg)} />}
 
-      {/* Commit 2: nút tạo rule từ văn bản. */}
       <RuleFromDocument detail={detail} isAdmin={isAdmin} wasManual={wasManual} />
 
       <div role="tablist" aria-label="Thông tin văn bản">
@@ -195,11 +194,15 @@ export function DocumentDetailView({ detail, isAdmin }: { detail: DocumentDetail
 }
 
 function RuleFromDocument({ detail, isAdmin, wasManual }: { detail: DocumentDetail; isAdmin: boolean; wasManual: boolean }) {
-  // Commit 2 hoàn thiện phần này.
-  void detail;
-  void isAdmin;
-  void wasManual;
-  return null;
+  if (!wasManual) return null;
+  if (isAdmin) {
+    return (
+      <p>
+        <Link href={`/admin/rules?fromDocument=${detail.id}`}>Tạo rule từ văn bản này</Link>
+      </p>
+    );
+  }
+  return <p className="muted">Liên hệ quản trị viên để thêm rule cho loại văn bản này.</p>;
 }
 
 function ClassifyForm({ detail, onDone }: { detail: DocumentDetail; onDone: (msg: string) => void }) {

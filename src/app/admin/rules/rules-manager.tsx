@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import type { RuleDraft } from "@/server/rule-draft";
 import type { Rule } from "@/server/rules";
 import type { Unit } from "@/server/units";
 
@@ -27,21 +29,39 @@ const emptyForm = (units: Unit[]): Form => ({
   priority: "0",
 });
 
+const draftForm = (units: Unit[], d: RuleDraft): Form => {
+  const has = (id: number | null) => id !== null && units.some((u) => u.id === id);
+  return {
+    ...emptyForm(units),
+    issuer: d.issuer,
+    docType: d.docType,
+    title: d.title,
+    summary: d.summary,
+    mainUnitId: has(d.mainUnitId) ? String(d.mainUnitId) : emptyForm(units).mainUnitId,
+    infoUnitId: has(d.infoUnitId) ? String(d.infoUnitId) : "",
+  };
+};
+
 export function RulesManager({
   rules,
   units,
   allUnits,
   q,
+  initialDraft = null,
+  draftNotice,
 }: {
   rules: Rule[];
   units: Unit[];
   allUnits: Unit[];
   q: string;
+  initialDraft?: RuleDraft | null;
+  draftNotice?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(q);
-  const [form, setForm] = useState<Form>(() => emptyForm(units));
+  const [form, setForm] = useState<Form>(() => (initialDraft ? draftForm(units, initialDraft) : emptyForm(units)));
+  const [savedFromDraft, setSavedFromDraft] = useState(false);
   const unitName = (id: number | null) => (id === null ? "—" : (allUnits.find((u) => u.id === id)?.name ?? `#${id}`));
 
   async function call(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -64,6 +84,7 @@ export function RulesManager({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    setSavedFromDraft(false);
     const payload = {
       issuer: form.issuer,
       docType: form.docType,
@@ -77,11 +98,26 @@ export function RulesManager({
       form.id === null
         ? await call("/api/admin/rules", "POST", payload)
         : await call(`/api/admin/rules/${form.id}`, "PATCH", payload);
-    if (ok) setForm(emptyForm(units));
+    if (ok) {
+      setForm(emptyForm(units));
+      if (initialDraft && form.id === null) setSavedFromDraft(true);
+    }
   }
 
   return (
     <div>
+      {initialDraft && (
+        <p role="note" className="doc-notice">
+          {`Đang tạo rule từ văn bản "${initialDraft.filename}".`}{" "}
+          <Link href={`/documents/${initialDraft.documentId}`}>Quay lại văn bản</Link>
+        </p>
+      )}
+      {!initialDraft && draftNotice && <p className="muted">{draftNotice}</p>}
+      {savedFromDraft && initialDraft && (
+        <p role="status" aria-live="polite">
+          Đã lưu quy tắc mới. <Link href={`/documents/${initialDraft.documentId}`}>Quay lại văn bản</Link>
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
 
       <form
