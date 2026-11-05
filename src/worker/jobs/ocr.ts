@@ -1,9 +1,9 @@
 import { eq, sql } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
 import { documents } from "@/db/schema";
-import { DifyConfigError, DifyHttpError, runOcr as defaultRunOcr, scrubKey } from "@/integrations/dify/client";
+import { DifyConfigError, DifyHttpError, DifyOutputError, runOcr as defaultRunOcr, scrubKey } from "@/integrations/dify/client";
 import { InvalidStateError, SecretariatMissingError, runRuleCheck as defaultRunRuleCheck } from "@/matching/run";
-import { DifyNotConfiguredError, getDifySettings } from "@/server/settings";
+import { DifyNotConfiguredError, KeyUnreadableError, getDifySettings } from "@/server/settings";
 import { DocumentNotFoundError, InvalidTransitionError, transition, type DbLike } from "@/server/status";
 import { saveMarkdown } from "@/server/storage";
 import fs from "node:fs/promises";
@@ -22,6 +22,10 @@ const DEAD_MESSAGE = "Công việc OCR bị hủy hoặc hết thời gian chờ
 /** Lỗi không thể khắc phục bằng thử lại: đánh dấu failed ngay. Trả về thông báo tiếng Việt, hoặc null nếu là lỗi tạm thời. */
 function permanentSummary(err: unknown): string | null {
   if (err instanceof DifyNotConfiguredError) return "Chưa cấu hình tích hợp OCR (Dify)";
+  if (err instanceof KeyUnreadableError) return "Không giải mã được API key Dify (APP_SECRET đã đổi?), hãy nhập lại API key";
+  if (err instanceof DifyOutputError) {
+    return "Workflow Dify không trả về đúng biến đầu ra, kiểm tra tên biến trong cấu hình tích hợp";
+  }
   if (err instanceof DifyConfigError) return "Cấu hình tích hợp OCR (Dify) không hợp lệ";
   if ((err as { code?: string } | null)?.code === "ENOENT") return "Không tìm thấy hoặc không đọc được tệp PDF";
   if (err instanceof SecretariatMissingError) return "Chưa cấu hình đơn vị Ban thư ký";

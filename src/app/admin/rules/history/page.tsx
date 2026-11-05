@@ -1,5 +1,7 @@
 import { requireAdminPage } from "@/auth/page-guard";
 import Link from "next/link";
+import { formatDateTimeVN } from "@/lib/format-time";
+import { parseRuleIdParam } from "@/lib/rule-id-param";
 import { listRuleAudit, type Rule } from "@/server/rules";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +35,10 @@ function diffLines(before: Rule | null, after: Rule | null): string[] {
   });
 }
 
-export default async function RuleHistoryPage({ searchParams }: { searchParams: Promise<{ ruleId?: string }> }) {
+export default async function RuleHistoryPage({ searchParams }: { searchParams: Promise<{ ruleId?: string | string[] }> }) {
   await requireAdminPage();
   const { ruleId } = await searchParams;
-  const id = ruleId && /^\d+$/.test(ruleId) ? Number(ruleId) : undefined;
+  const { id, invalid } = parseRuleIdParam(ruleId);
   const entries = await listRuleAudit(id);
   return (
     <section>
@@ -44,6 +46,7 @@ export default async function RuleHistoryPage({ searchParams }: { searchParams: 
       <p>
         <Link href="/admin/rules">← Quay lại quản lý quy tắc</Link>
       </p>
+      {invalid && <p role="status">Mã quy tắc không hợp lệ, đang hiển thị toàn bộ lịch sử.</p>}
       {entries.length === 0 ? (
         <p>Chưa có lịch sử.</p>
       ) : (
@@ -62,7 +65,7 @@ export default async function RuleHistoryPage({ searchParams }: { searchParams: 
               const snap = e.after ?? e.before;
               return (
                 <tr key={e.id}>
-                  <td>{e.at.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</td>
+                  <td>{formatDateTimeVN(e.at)}</td>
                   <td>{e.actorUsername ?? "(không rõ)"}</td>
                   <td>{ACTION_LABEL[e.action] ?? e.action}</td>
                   <td>

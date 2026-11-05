@@ -123,6 +123,8 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       ["retries -1", { retries: -1 }, "invalid_retries"],
       ["retries 11", { retries: 11 }, "invalid_retries"],
       ["retries NaN", { retries: NaN }, "invalid_retries"],
+      ["ngân sách 2×600×11 vượt hạn job", { timeoutS: 600, retries: 10 }, "invalid_budget"],
+      ["ngân sách 2×276×6 = 3312 vượt 3300", { timeoutS: 276, retries: 5 }, "invalid_budget"],
     ])("từ chối: %s", async (_n, patch, code) => {
       await expect(saveDifySettings("dify_ocr", input(patch as never), 1, t.db)).rejects.toMatchObject({ code });
       await expect(saveDifySettings("dify_ocr", input(patch as never), 1, t.db)).rejects.toBeInstanceOf(SettingsError);
@@ -130,10 +132,26 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       expect(await audits()).toHaveLength(0);
     });
 
-    it("chấp nhận biên timeout 1/600 và retries 0/10", async () => {
-      await saveDifySettings("dify_ocr", input({ timeoutS: 1, retries: 0 }), 1, t.db);
-      await saveDifySettings("dify_ocr", input({ timeoutS: 600, retries: 10, apiKey: "" }), 1, t.db);
-      expect(await rawRow()).toMatchObject({ timeoutS: 600, retries: 10 });
+    it("chấp nhận các biên riêng lẻ (timeout 1/600, retries 0/10) khi ngân sách ≤ 3300 giây", async () => {
+      await saveDifySettings("dify_ocr", input({ timeoutS: 1, retries: 10 }), 1, t.db);
+      expect(await rawRow()).toMatchObject({ timeoutS: 1, retries: 10 });
+      await saveDifySettings("dify_ocr", input({ timeoutS: 600, retries: 0, apiKey: "" }), 1, t.db);
+      expect(await rawRow()).toMatchObject({ timeoutS: 600, retries: 0 });
+    });
+
+    it("biên ngân sách: đúng 3300 qua, 3306 bị từ chối", async () => {
+      await saveDifySettings("dify_ocr", input({ timeoutS: 275, retries: 5 }), 1, t.db); // 3300
+      await expect(
+        saveDifySettings("dify_ocr", input({ timeoutS: 551, retries: 2, apiKey: "" }), 1, t.db), // 3306
+      ).rejects.toMatchObject({ code: "invalid_budget" });
+    });
+
+    it("thông báo ngân sách nêu giới hạn và giá trị tính được; mặc định OCR (300s/3) và agent (120/2) hợp lệ", async () => {
+      const err = await saveDifySettings("dify_ocr", input({ timeoutS: 600, retries: 10 }), 1, t.db).catch((e) => e);
+      expect(err.message).toContain("13200");
+      expect(err.message).toContain("3300");
+      await saveDifySettings("dify_ocr", input({ timeoutS: 300, retries: 3 }), 1, t.db); // 2400
+      await saveDifySettings("dify_agent", input({ timeoutS: 120, retries: 2 }), 1, t.db); // 720
     });
 
     it("key bắt buộc lần đầu (thiếu/rỗng)", async () => {
@@ -168,7 +186,7 @@ describe.skipIf(mode !== "run")("integration settings", () => {
         apiKeyChanged: true,
         timeoutS: 300,
       });
-      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-1234569999", retries: 5 }), 1, t.db);
+      await saveDifySettings("dify_ocr", input({ apiKey: "app-NEWKEY-1234569999", retries: 4 }), 1, t.db);
       rows = await audits();
       expect(rows).toHaveLength(2);
       const enc = (await rawRow()).apiKeyEnc!;
@@ -176,7 +194,7 @@ describe.skipIf(mode !== "run")("integration settings", () => {
       for (const secret of [KEY, "app-NEWKEY-1234569999", enc, "SECRETKEY", "NEWKEY"]) expect(dump).not.toContain(secret);
       const second = rows.find((r) => r.beforeMasked)!;
       expect(second.beforeMasked).toMatchObject({ apiKeyMasked: "app-****wxyz", retries: 3 });
-      expect(second.afterMasked).toMatchObject({ apiKeyMasked: "app-****9999", apiKeyChanged: true, retries: 5 });
+      expect(second.afterMasked).toMatchObject({ apiKeyMasked: "app-****9999", apiKeyChanged: true, retries: 4 });
     });
 
     it("chỉ đổi cấu hình (không đổi key) ghi apiKeyChanged=false", async () => {
@@ -322,7 +340,7 @@ describe.skipIf(mode !== "run")("integration settings", () => {
     it("lưu không nhập key mới bị từ chối (không giữ ciphertext hỏng); nhập lại key thì được", async () => {
       await saveThenChangeSecret();
       const before = (await rawRow()).apiKeyEnc;
-      await expect(saveDifySettings("dify_ocr", input({ baseUrl: mock.url, apiKey: "", retries: 5 }), 1, t.db)).rejects.toMatchObject({
+      await expect(saveDifySettings("dify_ocr", input({ baseUrl: mock.url, apiKey: "", retries: 4 }), 1, t.db)).rejects.toMatchObject({
         code: "api_key_unreadable",
       });
       expect((await rawRow()).apiKeyEnc).toBe(before);

@@ -268,17 +268,37 @@ describe.skipIf(mode !== "run")("handleOcrJob", () => {
       expect(await evs(id)).toEqual(["rule_checking>failed"]);
     });
 
-    it("undecryptable settings (wrong APP_SECRET) is transient: failed on the last attempt", async () => {
+    it("permanent: undecryptable settings (wrong APP_SECRET) fails on the FIRST attempt with a clear message", async () => {
       const id = await mkDoc();
-      // Lỗi giải mã cấu hình (APP_SECRET sai) là lỗi tạm thời.
       const prev = process.env.APP_SECRET;
       process.env.APP_SECRET = "f".repeat(40);
       try {
-        await handleOcrJob(id, LAST, deps);
+        await expect(handleOcrJob(id, FIRST, deps)).resolves.toBeUndefined();
       } finally {
         process.env.APP_SECRET = prev;
       }
-      expect((await get(id)).status).toBe("failed");
+      const d = await get(id);
+      expect(d.status).toBe("failed");
+      expect(d.error).toContain("APP_SECRET");
+      expect(d.error).toContain("KeyUnreadableError");
+    });
+
+    it("permanent: wrong output variable name (DifyOutputError) fails on the FIRST attempt", async () => {
+      mock.onRun = () => workflowOk({ other: "x" });
+      const id = await mkDoc();
+      await expect(handleOcrJob(id, FIRST, deps)).resolves.toBeUndefined();
+      const d = await get(id);
+      expect(d.status).toBe("failed");
+      expect(d.error).toContain("DifyOutputError");
+      expect(d.error).toContain("biến đầu ra");
+      expect(mock.runs.length).toBe(1);
+    });
+
+    it("transient: 5xx from the workflow still rethrows with retries left", async () => {
+      mock.onRun = () => ({ status: 503, body: { message: "busy" } });
+      const id = await mkDoc();
+      await expect(handleOcrJob(id, FIRST, deps)).rejects.toThrow();
+      expect((await get(id)).status).toBe("ocr_processing");
     });
   });
 });

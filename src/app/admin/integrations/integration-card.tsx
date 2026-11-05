@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
+import { formatDateTimeVN } from "@/lib/format-time";
 import { initialFormValues, type Defaults, type View } from "./form-values";
 
 export function IntegrationCard(props: {
@@ -137,6 +138,12 @@ export function IntegrationCard(props: {
           <br />
           <input id={id("retries")} type="number" min={0} max={10} step={1} value={retries} onChange={(e) => setRetries(e.target.value)} required />
         </p>
+        <p>
+          <small>
+            Giới hạn: 2 × thời gian chờ × (số lần thử lại + 1) không quá 3300 giây (mỗi lần thử gồm tải tệp lên và chạy
+            workflow; công việc hết hạn sau 3600 giây). Mặc định OCR 300 giây × 4 lần = 2400, agent 120 giây × 3 lần = 720.
+          </small>
+        </p>
         <button type="submit" disabled={busy}>
           Lưu cấu hình
         </button>{" "}
@@ -146,7 +153,7 @@ export function IntegrationCard(props: {
         {v.updatedAt && (
           <p>
             <small>
-              Cập nhật lần cuối: {new Date(v.updatedAt).toLocaleString("vi-VN")}
+              Cập nhật lần cuối: {formatDateTimeVN(v.updatedAt)}
               {v.updatedBy ? ` bởi ${v.updatedBy}` : ""}
             </small>
           </p>

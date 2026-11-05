@@ -6,6 +6,7 @@ const STATUS: Record<SettingsErrorCode, number> = {
   invalid_var: 400,
   invalid_timeout: 400,
   invalid_retries: 400,
+  invalid_budget: 400,
   invalid_api_key: 400,
   api_key_required: 400,
   api_key_unreadable: 400,

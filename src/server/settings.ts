@@ -22,6 +22,7 @@ export type SettingsErrorCode =
   | "invalid_var"
   | "invalid_timeout"
   | "invalid_retries"
+  | "invalid_budget"
   | "invalid_api_key"
   | "api_key_required"
   | "api_key_unreadable";
@@ -31,6 +32,7 @@ const MESSAGES: Record<SettingsErrorCode, string> = {
   invalid_var: "Tên biến không được để trống và tối đa 100 ký tự",
   invalid_timeout: "Thời gian chờ phải là số nguyên từ 1 đến 600 giây",
   invalid_retries: "Số lần thử lại phải là số nguyên từ 0 đến 10",
+  invalid_budget: "Tổng thời gian chờ tối đa vượt giới hạn",
   invalid_api_key: "API key không hợp lệ",
   api_key_required: "API key là bắt buộc khi cấu hình lần đầu",
   api_key_unreadable: "API key đã lưu không đọc được (APP_SECRET đã đổi?): hãy nhập lại API key để lưu",
@@ -54,9 +56,20 @@ function decryptStoredKey(enc: string): string {
   }
 }
 
+/**
+ * Công việc hàng đợi hết hạn sau 3600 giây (OCR_EXPIRE_SECONDS). Mỗi lần thử gọi Dify hai yêu cầu (tải lên + chạy
+ * workflow), mỗi yêu cầu chờ tối đa timeoutS giây, nên ngân sách xấu nhất = 2 × timeoutS × (retries + 1) phải nhỏ hơn
+ * hạn đó (chừa ~300 giây dự phòng), nếu không pg-boss giao lại job khi handler cũ còn đang chạy.
+ */
+export const MAX_DIFY_BUDGET_S = 3300;
+export const difyBudgetS = (timeoutS: number, retries: number) => 2 * timeoutS * (retries + 1);
+
 export class SettingsError extends Error {
-  constructor(public readonly code: SettingsErrorCode) {
-    super(MESSAGES[code]);
+  constructor(
+    public readonly code: SettingsErrorCode,
+    message?: string,
+  ) {
+    super(message ?? MESSAGES[code]);
     this.name = "SettingsError";
   }
 }
@@ -141,6 +154,14 @@ function cleanFields(input: DifySettingsInput): Fields {
   }
   if (!Number.isInteger(input.retries) || input.retries < 0 || input.retries > 10) {
     throw new SettingsError("invalid_retries");
+  }
+  const budget = difyBudgetS(input.timeoutS, input.retries);
+  if (budget > MAX_DIFY_BUDGET_S) {
+    throw new SettingsError(
+      "invalid_budget",
+      `Tổng thời gian chờ tối đa = 2 × thời gian chờ × (số lần thử lại + 1) = ${budget} giây, vượt giới hạn ${MAX_DIFY_BUDGET_S} giây ` +
+        "(công việc hết hạn sau 3600 giây). Hãy giảm thời gian chờ hoặc số lần thử lại",
+    );
   }
   return { baseUrl, inputVar, outputVarMd, outputVarJson, timeoutS: input.timeoutS, retries: input.retries };
 }
