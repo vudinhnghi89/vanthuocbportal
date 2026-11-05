@@ -70,3 +70,7 @@ Ngoài guard trong route, `src/proxy.ts` chặn mọi yêu cầu chưa đăng nh
 - Cookie phiên là JWT không có danh sách thu hồi; khóa tài khoản có hiệu lực ngay vì phiên được kiểm tra lại với DB ở mỗi yêu cầu (`buildSessionUser`).
 - Phụ thuộc dev có 12 cảnh báo moderate (mục 1.18).
 - Chưa kiểm thử xâm nhập; chưa có Caddy trong sandbox nên cú pháp `Caddyfile` mới (khối `header`) chưa chạy thử: kiểm tra bằng `caddy validate` khi triển khai.
+
+## 5. Triển khai
+
+Quy trình triển khai, cấu hình `AUTH_URL` (cờ Secure của cookie phiên), nối mạng Dify, HTTPS và xử lý sự cố: xem `docs/deploy.md`; kiểm tra sau triển khai: `scripts/post-deploy-check.sh`; sao lưu: `docs/backup.md`.
