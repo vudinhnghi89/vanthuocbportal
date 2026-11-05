@@ -1,0 +1,26 @@
+# Override TÙY CHỌN: cho web/worker gọi được Dify đang chạy trên cùng máy qua mạng Docker của Dify.
+#   docker compose -f docker-compose.yml -f docker-compose.dify.yml up -d --build
+# (hoặc đặt COMPOSE_FILE=docker-compose.yml:docker-compose.dify.yml trong .env; xem docs/deploy.md mục 5)
+#
+# Vì sao dùng cổng `dify-gateway` thay vì gắn thẳng web/worker vào mạng Dify: Docker đăng ký tên service làm
+# DNS alias trên MỌI mạng mà container tham gia. Dify cũng có service `web` (cổng 3000) và `worker`; nếu service
+# `web` của ta vào mạng Dify, nginx của Dify sẽ phân giải `web` ra cả container của ta và đôi lúc gửi người dùng
+# Dify sang ứng dụng này. `dify-gateway` có tên duy nhất nên không va chạm.
+#
+# Base URL nhập ở Quản trị > Tích hợp:  http://dify-gateway/v1
+services:
+  dify-gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    # Chuyển tiếp thuần HTTP tới nginx của Dify (tên:cổng trong mạng Dify; đổi bằng DIFY_UPSTREAM trong .env).
+    command: ["caddy", "reverse-proxy", "--from", ":80", "--to", "${DIFY_UPSTREAM:-nginx:80}", "--change-host-header"]
+    cpus: 0.5
+    mem_limit: 128m
+    networks:
+      - internal
+      - dify
+
+networks:
+  dify:
+    external: true
+    name: ${DIFY_NETWORK:-docker_default}

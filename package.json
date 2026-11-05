@@ -8,8 +8,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build && npm run build:worker",
-    "build:worker": "esbuild src/worker/index.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/worker.js && npm run build:healthcheck",
+    "build:worker": "esbuild src/worker/index.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/worker.js && npm run build:healthcheck && npm run build:migrate",
     "build:healthcheck": "esbuild src/worker/healthcheck.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/healthcheck.js",
+    "build:migrate": "esbuild src/db/migrate-runtime.ts --bundle --platform=node --format=cjs --target=node22 --external:@node-rs/argon2 --outfile=dist/migrate.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

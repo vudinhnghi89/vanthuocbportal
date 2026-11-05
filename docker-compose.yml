@@ -1,3 +1,5 @@
+# Biến lấy từ .env cùng thư mục (xem .env.example). Mỗi service chỉ nhận đúng biến nó cần.
+# Nối mạng Dify: thêm `-f docker-compose.dify.yml` (xem docs/deploy.md mục 5).
 services:
   postgres:
     image: postgres:16-alpine
@@ -17,13 +19,39 @@ services:
     mem_limit: 1g
     networks: [internal]
 
-  web:
+  # Một lần mỗi lần `up`: áp dụng migration SQL rồi seed (Ban thư ký + admin đầu tiên). Idempotent.
+  # web và worker chỉ chạy khi service này thoát với mã 0.
+  migrate:
     build: .
-    restart: unless-stopped
-    env_file: .env
+    image: vanthu-portal:local
+    command: ["node", "dist/migrate.js"]
+    restart: "no"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
     depends_on:
       postgres:
         condition: service_healthy
+    cpus: 0.5
+    mem_limit: 512m
+    networks: [internal]
+
+  web:
+    build: .
+    image: vanthu-portal:local
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      AUTH_URL: ${AUTH_URL:-http://localhost:8080}
+      DATA_DIR: ${DATA_DIR:-/data}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       # Shared with worker: web writes uploaded PDFs to /data/pdf, worker reads them (DATA_DIR=/data).
       - appdata:/data
@@ -32,20 +60,27 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 20s
     cpus: 1.0
     mem_limit: 1g
     networks: [internal]
 
   worker:
     build: .
+    image: vanthu-portal:local
     restart: unless-stopped
     command: ["node", "dist/worker.js"]
     # Phải lớn hơn SHUTDOWN_TIMEOUT_MS (30s) trong src/worker/config.ts.
     stop_grace_period: 45s
-    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
+      DATA_DIR: ${DATA_DIR:-/data}
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - appdata:/data
     healthcheck:
