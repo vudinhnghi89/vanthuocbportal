@@ -18,6 +18,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         "Content-Disposition": inlineDisposition(file.filename),
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
+        // CSP riêng, chặt hơn CSP toàn app; next.config.ts loại route này khỏi luật CSP chung nên không bị ghi đè.
+        // Lưu ý: Chromium có thể để trống trình xem PDF tích hợp khi có `sandbox` -> kiểm tra thủ công
+        // (docs/security-checklist.md, "Trình xem PDF inline").
         "Content-Security-Policy": "default-src 'none'; sandbox",
       },
     });

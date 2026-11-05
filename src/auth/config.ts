@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authorizeCredentials } from "./authorize";
 import { buildSessionUser } from "./callbacks";
+import { sessionCookieOptions, secureCookiesEnabled } from "./cookie-options";
 
 declare module "next-auth" {
   interface Session {
@@ -14,15 +15,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
   trustHost: true, // chạy sau Caddy
   pages: { signIn: "/login" },
-  useSecureCookies: process.env.NODE_ENV === "production",
+  useSecureCookies: secureCookiesEnabled(),
   cookies: {
     sessionToken: {
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
+      options: sessionCookieOptions(),
     },
   },
   providers: [

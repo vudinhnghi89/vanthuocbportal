@@ -6,6 +6,16 @@
 	request_body {
 		max_size 210MB
 	}
+
+	# Header bảo mật trang/API do Next đặt (next.config.ts: CSP, nosniff, X-Frame-Options, Referrer-Policy,
+	# Permissions-Policy); không lặp lại ở đây để mỗi header chỉ xuất hiện một lần.
+	header -Server
+
+	# HSTS: CHỈ bật khi site chạy HTTPS (đổi `:80` thành tên miền để Caddy tự cấp chứng chỉ). Bật trên HTTP thuần
+	# là vô nghĩa; bật rồi tắt HTTPS sẽ khóa trình duyệt trong thời hạn max-age. Bỏ comment khi đã chắc chắn:
+	#
+	# header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
 	reverse_proxy web:3000 {
 		# SSE (/api/events): đẩy từng khung ngay, không đệm phản hồi.
 		flush_interval -1
