@@ -14,10 +14,10 @@ async function signOutAction() {
 export default async function UserLayout({ children }: { children: ReactNode }) {
   const { user } = await requireUserPage();
   return (
-    <>
+    <div className="app-user">
       <UserHeader username={user.username} role={user.role} signOutAction={signOutAction} />
       <Notifier />
       <main className="container">{children}</main>
-    </>
+    </div>
   );
 }

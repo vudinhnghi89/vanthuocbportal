@@ -8,6 +8,10 @@
   --accent-fg: #fff;
   --danger: #b3261e;
   --ok: #1e7a3c;
+  --danger-fg: #fff;
+  --badge-failed: #c0392b;
+  --badge-manual: #b9770e;
+  --border-strong: #8d97a6;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -21,6 +25,10 @@
     --accent-fg: #0b1220;
     --danger: #ff8a80;
     --ok: #6fd58f;
+    --danger-fg: #0b1220;
+    --badge-failed: #ff8a80;
+    --badge-manual: #f0b45a;
+    --border-strong: #6b7587;
   }
 }
 * { box-sizing: border-box; }
@@ -30,11 +38,13 @@ body {
   color: var(--fg);
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-a { color: var(--accent); }
-h1 { font-size: 1.5rem; margin: 1.25rem 0 1rem; }
-h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-button {
+
+/* Element-level styling applies only inside the signed-in user area (user layout wrapper). */
+.app-user a { color: var(--accent); }
+.app-user h1 { font-size: 1.5rem; margin: 1.25rem 0 1rem; }
+.app-user h2 { font-size: 1.15rem; margin: 1.5rem 0 .5rem; }
+.app-user button {
   font: inherit;
   padding: .4rem .9rem;
   border: 1px solid var(--border);
@@ -43,7 +53,7 @@ button {
   color: var(--fg);
   cursor: pointer;
 }
-button:disabled { opacity: .5; cursor: not-allowed; }
+.app-user button:disabled { opacity: .5; cursor: not-allowed; }
 .container { max-width: 960px; margin: 0 auto; padding: 0 1rem 2rem; }
 .muted { color: var(--muted); }
 .visually-hidden {
@@ -83,12 +93,12 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .doc-error { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
 .doc-pager { display: flex; align-items: center; gap: .75rem; margin-top: .75rem; }
 .badge { display: inline-block; padding: .1rem .5rem; border: 1px solid var(--border); border-radius: 999px; font-size: .8rem; white-space: nowrap; }
-.badge--failed { border-color: #c0392b; }
-.badge--manual { border-color: #b9770e; }
+.badge--failed { border-color: var(--badge-failed); }
+.badge--manual { border-color: var(--badge-manual); }
 .doc-warning { margin: .5rem 0; color: var(--danger); }
 .bell { position: relative; }
 .bell__button { position: relative; display: inline-flex; align-items: center; padding: .25rem .4rem; }
-.bell__count { position: absolute; top: -.35rem; right: -.35rem; min-width: 1.1rem; padding: 0 .25rem; border-radius: 999px; background: var(--danger); color: #fff; font-size: .7rem; line-height: 1.1rem; text-align: center; }
+.bell__count { position: absolute; top: -.35rem; right: -.35rem; min-width: 1.1rem; padding: 0 .25rem; border-radius: 999px; background: var(--danger); color: var(--danger-fg); font-size: .7rem; line-height: 1.1rem; text-align: center; }
 .bell__panel { position: absolute; right: 0; top: calc(100% + .4rem); z-index: 20; width: min(22rem, 90vw); max-height: 24rem; overflow-y: auto; padding: .6rem .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15); }
 .bell__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .4rem; }
 .bell__panel ul { list-style: none; margin: 0; padding: 0; }
@@ -99,9 +109,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .toast__close { flex: none; }
 
 /* Chi tiết văn bản */
-.doc-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; padding: 0.75rem; border: 1px solid #ccc; }
+.doc-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; overflow: auto; padding: 0.75rem; border: 1px solid var(--border-strong); }
 .doc-meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
 .doc-meta dd { margin: 0; }
-.doc-classify { margin: 1rem 0; padding: 0.75rem; border: 1px solid #ccc; }
-[role="tablist"] { display: flex; gap: 0.25rem; margin-top: 1rem; flex-wrap: wrap; }
-[role="tab"][aria-selected="true"] { font-weight: bold; }
+.doc-classify { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--border-strong); }
+.app-user [role="tablist"] { display: flex; gap: 0.25rem; margin-top: 1rem; flex-wrap: wrap; }
+.app-user [role="tab"][aria-selected="true"] { font-weight: bold; }
