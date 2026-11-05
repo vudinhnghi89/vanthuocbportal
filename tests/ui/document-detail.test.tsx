@@ -86,7 +86,7 @@ describe("DocumentDetailView", () => {
     expect(tabs).toHaveLength(3);
     expect(tabs[0].getAttribute("aria-selected")).toBe("true");
     fireEvent.click(screen.getByRole("tab", { name: "Dữ liệu trích xuất (JSON)" }));
-    expect(container.querySelector("pre")!.textContent).toBe(JSON.stringify({ tieu_de: "<b>x</b>" }, null, 2));
+    expect(screen.getByRole("tabpanel").querySelector("pre")!.textContent).toBe(JSON.stringify({ tieu_de: "<b>x</b>" }, null, 2));
     expect(container.querySelector("b")).toBeNull();
     fireEvent.click(screen.getByRole("tab", { name: "Lịch sử trạng thái" }));
     const rows = screen.getAllByRole("row");
@@ -97,6 +97,43 @@ describe("DocumentDetailView", () => {
     expect(within(rows[1]).getByText("Hàng đợi")).toBeTruthy();
     expect(within(rows[2]).getByText("Hệ thống")).toBeTruthy();
     expect(within(rows[2]).getByText("ghi chú")).toBeTruthy();
+  });
+
+  describe("tabs (WAI-ARIA)", () => {
+    const setup = () => {
+      render(<DocumentDetailView detail={detail()} isAdmin={false} />);
+      return screen.getAllByRole("tab");
+    };
+    it("uses roving tabindex and every aria-controls points to an existing panel", () => {
+      const tabs = setup();
+      expect(tabs.map((t) => t.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+      for (const t of tabs) {
+        const panel = document.getElementById(t.getAttribute("aria-controls")!);
+        expect(panel).not.toBeNull();
+        expect(panel!.getAttribute("role")).toBe("tabpanel");
+        expect(panel!.getAttribute("aria-labelledby")).toBe(t.id);
+        expect(panel!.hasAttribute("hidden")).toBe(t.getAttribute("aria-selected") !== "true");
+      }
+    });
+    it("arrow keys, Home and End move focus and selection (wrapping)", () => {
+      const tabs = setup();
+      tabs[0].focus();
+      fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
+      expect(document.activeElement).toBe(tabs[1]);
+      expect(tabs[1].getAttribute("aria-selected")).toBe("true");
+      expect(tabs[1].getAttribute("tabindex")).toBe("0");
+      expect(tabs[0].getAttribute("tabindex")).toBe("-1");
+      fireEvent.keyDown(tabs[1], { key: "End" });
+      expect(document.activeElement).toBe(tabs[2]);
+      fireEvent.keyDown(tabs[2], { key: "ArrowRight" });
+      expect(document.activeElement).toBe(tabs[0]);
+      fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+      expect(document.activeElement).toBe(tabs[2]);
+      fireEvent.keyDown(tabs[2], { key: "Home" });
+      expect(document.activeElement).toBe(tabs[0]);
+      expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+      expect(document.getElementById(tabs[0].getAttribute("aria-controls")!)!.hasAttribute("hidden")).toBe(false);
+    });
   });
 
   describe("failed", () => {

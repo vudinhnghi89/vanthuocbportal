@@ -55,8 +55,39 @@ describe("RulesManager with initialDraft", () => {
 
   it("ignores units that are not active options", () => {
     renderIt({ initialDraft: { ...draft, mainUnitId: 99, infoUnitId: 98 } });
-    expect((screen.getByLabelText("Đơn vị chủ trì") as HTMLSelectElement).value).toBe("1");
+    expect((screen.getByLabelText("Đơn vị chủ trì") as HTMLSelectElement).value).toBe("");
     expect((screen.getByLabelText("Đơn vị nhận để biết") as HTMLSelectElement).value).toBe("");
+  });
+
+  it("leaves the main unit empty when the draft has none and blocks submit until chosen", async () => {
+    renderIt({ initialDraft: { ...draft, mainUnitId: null } });
+    const sel = screen.getByLabelText("Đơn vị chủ trì") as HTMLSelectElement;
+    expect(sel.value).toBe("");
+    expect(sel.options[0].textContent).toBe("Chọn đơn vị…");
+    fireEvent.click(screen.getByRole("button", { name: "Thêm quy tắc" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/đơn vị chủ trì/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.change(sel, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Thêm quy tắc" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).mainUnitId).toBe(1);
+  });
+
+  it("replaces the draft banner with the success notice after saving", async () => {
+    renderIt();
+    fireEvent.click(screen.getByRole("button", { name: "Thêm quy tắc" }));
+    expect(await screen.findByText(/Đã lưu quy tắc mới/)).toBeTruthy();
+    expect(screen.queryByText(/Đang tạo rule từ văn bản/)).toBeNull();
+    expect(screen.getByRole("link", { name: "Quay lại văn bản" }).getAttribute("href")).toBe(`/documents/${ID}`);
+  });
+
+  it("hides the draft banner while editing an unrelated existing rule", () => {
+    const rule = { id: 5, issuer: "I", docType: "D", title: "", summary: "", mainUnitId: 1, infoUnitId: null, priority: 0, active: true };
+    render(<RulesManager rules={[rule as never]} units={units} allUnits={units} q="" initialDraft={draft} />);
+    expect(screen.getByText(/Đang tạo rule từ văn bản/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sửa" }));
+    expect(screen.queryByText(/Đang tạo rule từ văn bản/)).toBeNull();
+    expect((screen.getByLabelText("Cơ quan ban hành") as HTMLInputElement).value).toBe("I");
   });
 
   it("admin can edit, saves via POST /api/admin/rules, then sees a link back", async () => {
@@ -91,7 +122,7 @@ describe("RulesManager with initialDraft", () => {
   it("behaves as before without a draft", () => {
     render(<RulesManager rules={[]} units={units} allUnits={units} q="" />);
     expect(screen.queryByText(/Đang tạo rule từ văn bản/)).toBeNull();
-    expect((screen.getByLabelText("Đơn vị chủ trì") as HTMLSelectElement).value).toBe("1");
+    expect((screen.getByLabelText("Đơn vị chủ trì") as HTMLSelectElement).value).toBe("");
   });
 });
 

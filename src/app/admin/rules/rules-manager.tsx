@@ -18,13 +18,13 @@ type Form = {
   priority: string;
 };
 
-const emptyForm = (units: Unit[]): Form => ({
+const emptyForm = (): Form => ({
   id: null,
   issuer: "",
   docType: "",
   title: "",
   summary: "",
-  mainUnitId: units[0] ? String(units[0].id) : "",
+  mainUnitId: "",
   infoUnitId: "",
   priority: "0",
 });
@@ -32,12 +32,12 @@ const emptyForm = (units: Unit[]): Form => ({
 const draftForm = (units: Unit[], d: RuleDraft): Form => {
   const has = (id: number | null) => id !== null && units.some((u) => u.id === id);
   return {
-    ...emptyForm(units),
+    ...emptyForm(),
     issuer: d.issuer,
     docType: d.docType,
     title: d.title,
     summary: d.summary,
-    mainUnitId: has(d.mainUnitId) ? String(d.mainUnitId) : emptyForm(units).mainUnitId,
+    mainUnitId: has(d.mainUnitId) ? String(d.mainUnitId) : "",
     infoUnitId: has(d.infoUnitId) ? String(d.infoUnitId) : "",
   };
 };
@@ -60,8 +60,9 @@ export function RulesManager({
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(q);
-  const [form, setForm] = useState<Form>(() => (initialDraft ? draftForm(units, initialDraft) : emptyForm(units)));
+  const [form, setForm] = useState<Form>(() => (initialDraft ? draftForm(units, initialDraft) : emptyForm()));
   const [savedFromDraft, setSavedFromDraft] = useState(false);
+  const [draftActive, setDraftActive] = useState(true);
   const unitName = (id: number | null) => (id === null ? "—" : (allUnits.find((u) => u.id === id)?.name ?? `#${id}`));
 
   async function call(url: string, method: string, body?: unknown): Promise<boolean> {
@@ -85,6 +86,10 @@ export function RulesManager({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setSavedFromDraft(false);
+    if (form.mainUnitId === "") {
+      setError("Vui lòng chọn đơn vị chủ trì");
+      return;
+    }
     const payload = {
       issuer: form.issuer,
       docType: form.docType,
@@ -99,14 +104,17 @@ export function RulesManager({
         ? await call("/api/admin/rules", "POST", payload)
         : await call(`/api/admin/rules/${form.id}`, "PATCH", payload);
     if (ok) {
-      setForm(emptyForm(units));
-      if (initialDraft && form.id === null) setSavedFromDraft(true);
+      setForm(emptyForm());
+      if (initialDraft && draftActive && form.id === null) {
+        setSavedFromDraft(true);
+        setDraftActive(false);
+      }
     }
   }
 
   return (
     <div>
-      {initialDraft && (
+      {initialDraft && draftActive && (
         <p role="note" className="doc-notice">
           {`Đang tạo rule từ văn bản "${initialDraft.filename}".`}{" "}
           <Link href={`/documents/${initialDraft.documentId}`}>Quay lại văn bản</Link>
@@ -158,7 +166,8 @@ export function RulesManager({
         <p>
           <label>
             Đơn vị chủ trì{" "}
-            <select value={form.mainUnitId} onChange={set("mainUnitId")} required>
+            <select value={form.mainUnitId} onChange={set("mainUnitId")} aria-required="true">
+              <option value="">Chọn đơn vị…</option>
               {units.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
@@ -187,7 +196,7 @@ export function RulesManager({
         </p>
         <button type="submit">{form.id === null ? "Thêm quy tắc" : "Lưu"}</button>
         {form.id !== null && (
-          <button type="button" onClick={() => setForm(emptyForm(units))}>
+          <button type="button" onClick={() => setForm(emptyForm())}>
             Hủy
           </button>
         )}
@@ -228,6 +237,8 @@ export function RulesManager({
                   type="button"
                   onClick={() => {
                     setError(null);
+                    setDraftActive(false);
+                    setSavedFromDraft(false);
                     setForm({
                       id: r.id,
                       issuer: r.issuer,

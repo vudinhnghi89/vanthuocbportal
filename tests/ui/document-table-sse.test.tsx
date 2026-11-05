@@ -144,6 +144,25 @@ describe("failed background refresh", () => {
     expect(screen.getByText("cv-02.pdf")).toBeTruthy();
   });
 
+  it("repeated failing polls keep one alert element and do not re-announce (no DOM mutation)", async () => {
+    render(<DocumentTable />);
+    await flush();
+    docHandler = () => json({ error: "Máy chủ lỗi" }, 500);
+    await flush(15_000);
+    const alert = screen.getByRole("alert");
+    const calls = docCalls();
+    const mutations: MutationRecord[] = [];
+    const obs = new MutationObserver((m) => mutations.push(...m));
+    obs.observe(alert, { childList: true, subtree: true, characterData: true, attributes: true });
+    await flush(15_000 * 3);
+    await Promise.resolve();
+    obs.disconnect();
+    expect(docCalls()).toBeGreaterThan(calls);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toBe(alert);
+    expect(mutations.length).toBe(0);
+  });
+
   it("initial load failure still shows the error state without a table", async () => {
     docHandler = () => json({ error: "Máy chủ lỗi" }, 500);
     render(<DocumentTable />);

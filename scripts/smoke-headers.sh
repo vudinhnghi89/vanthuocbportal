@@ -5,33 +5,14 @@
 # the PDF route keeps its own stricter CSP (single value); the login Set-Cookie is HttpOnly + SameSite=Lax + Path=/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BASE_URL="${ADMIN_DATABASE_URL:?set ADMIN_DATABASE_URL}"
-DB="vtp_smoke_hdr_$$"
-TMP="$(mktemp -d)"
-PORT="${PORT:-$(python3 -c 'import socket;s=socket.socket();s.bind(("",0));print(s.getsockname()[1])')}"
-DBURL="$(python3 - "$BASE_URL" "$DB" <<'PY'
-import sys, urllib.parse as u
-p = u.urlparse(sys.argv[1]); print(p._replace(path="/" + sys.argv[2]).geturl())
-PY
-)"
-SERVER_PID=""
-cleanup() {
-  [ -n "$SERVER_PID" ] && kill -- "-$SERVER_PID" 2>/dev/null || true
-  wait 2>/dev/null || true
-  psql "$BASE_URL" -qc "DROP DATABASE IF EXISTS $DB WITH (FORCE)" >/dev/null 2>&1 || true
-  rm -rf "$TMP"
-}
-trap cleanup EXIT
+# shellcheck source=scripts/lib-smoke.sh
+source "$(dirname "$0")/lib-smoke.sh"
+smoke_init vtp_smoke_hdr
+trap smoke_cleanup EXIT
 
-psql "$BASE_URL" -qc "CREATE DATABASE $DB"
-export DATABASE_URL="$DBURL" AUTH_SECRET=dummy-smoke-secret APP_SECRET=0123456789abcdef0123456789abcdef \
-  AUTH_TRUST_HOST=true DATA_DIR="$TMP/data" ADMIN_USERNAME=smoke ADMIN_PASSWORD=smoke-pass-123 PORT="$PORT"
-npm run -s db:migrate
-npm run -s db:seed
-setsid npx next start -p "$PORT" >"$TMP/server.log" 2>&1 &
-SERVER_PID=$!
-for _ in $(seq 60); do curl -fs "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
-URL="http://127.0.0.1:$PORT"; JAR="$TMP/jar"
+smoke_prepare_db
+smoke_start_server
+smoke_wait_health
 
 # once <file> <header-name> [expected-substring]: header present exactly once (case-insensitive).
 once() {

@@ -138,27 +138,40 @@ export function DocumentDetailView({ detail, isAdmin }: { detail: DocumentDetail
             tabIndex={tab === t.key ? 0 : -1}
             onClick={() => setTab(t.key)}
             onKeyDown={(e) => {
-              const i = TABS.findIndex((x) => x.key === tab);
-              if (e.key === "ArrowRight") setTab(TABS[(i + 1) % TABS.length].key);
-              else if (e.key === "ArrowLeft") setTab(TABS[(i + TABS.length - 1) % TABS.length].key);
+              const i = TABS.findIndex((x) => x.key === t.key);
+              let next: number;
+              if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
+              else if (e.key === "ArrowLeft") next = (i + TABS.length - 1) % TABS.length;
+              else if (e.key === "Home") next = 0;
+              else if (e.key === "End") next = TABS.length - 1;
               else return;
               e.preventDefault();
+              setTab(TABS[next].key);
+              document.getElementById(`${uid}-tab-${TABS[next].key}`)?.focus();
             }}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <div role="tabpanel" id={`${uid}-panel-${tab}`} aria-labelledby={`${uid}-tab-${tab}`} tabIndex={0}>
-        {tab === "md" && (
-          <>
-            {detail.markdownTruncated && <p className="muted">Nội dung đã cắt bớt (chỉ hiển thị phần đầu).</p>}
-            {detail.markdown ? <pre className="doc-pre">{detail.markdown}</pre> : <p className="muted">Chưa có nội dung.</p>}
-          </>
-        )}
-        {tab === "json" &&
-          (json ? <pre className="doc-pre">{json}</pre> : <p className="muted">Chưa có dữ liệu trích xuất.</p>)}
-        {tab === "history" && (
+      {TABS.map((t) => (
+        <div
+          key={t.key}
+          role="tabpanel"
+          id={`${uid}-panel-${t.key}`}
+          aria-labelledby={`${uid}-tab-${t.key}`}
+          tabIndex={0}
+          hidden={tab !== t.key}
+        >
+          {t.key === "md" && (
+            <>
+              {detail.markdownTruncated && <p className="muted">Nội dung đã cắt bớt (chỉ hiển thị phần đầu).</p>}
+              {detail.markdown ? <pre className="doc-pre">{detail.markdown}</pre> : <p className="muted">Chưa có nội dung.</p>}
+            </>
+          )}
+          {t.key === "json" &&
+            (json ? <pre className="doc-pre">{json}</pre> : <p className="muted">Chưa có dữ liệu trích xuất.</p>)}
+          {t.key === "history" && (
           <table className="doc-table">
             <caption className="visually-hidden">Lịch sử trạng thái</caption>
             <thead>
@@ -187,8 +200,9 @@ export function DocumentDetailView({ detail, isAdmin }: { detail: DocumentDetail
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
