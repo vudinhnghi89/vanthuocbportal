@@ -17,6 +17,8 @@ describe("isPublicPath", () => {
 describe("proxyDecision", () => {
   it("trang chưa đăng nhập -> redirect", () => expect(proxyDecision("/documents", false)).toBe("redirect"));
   it("API chưa đăng nhập -> 401", () => expect(proxyDecision("/api/documents", false)).toBe("unauthorized"));
+  it("API retry chưa đăng nhập -> 401", () =>
+    expect(proxyDecision("/api/documents/00000000-0000-4000-8000-000000000000/retry", false)).toBe("unauthorized"));
   it("đã đăng nhập -> đi tiếp", () => expect(proxyDecision("/documents", true)).toBe("next"));
   it("đường dẫn công khai đi tiếp", () => expect(proxyDecision("/login", false)).toBe("next"));
   it("/login-evil chưa đăng nhập -> redirect", () => expect(proxyDecision("/login-evil", false)).toBe("redirect"));

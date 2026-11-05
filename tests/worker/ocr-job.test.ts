@@ -216,6 +216,18 @@ describe.skipIf(mode !== "run")("handleOcrJob", () => {
       expect(d.error).not.toContain(API_KEY);
     });
 
+    it("after exhausting retries, a manual retry (failed>queued) processes the document", async () => {
+      mock.onRun = () => ({ status: 503, body: {} });
+      const id = await mkDoc();
+      await handleOcrJob(id, LAST, deps);
+      expect((await get(id)).status).toBe("failed");
+      mock.onRun = () => workflowOk({ md: MD, json: JSON_OUT });
+      await transition(id, "queued", { note: "Chạy lại" }, t.db as never);
+      expect((await get(id)).error).toBeNull();
+      await handleOcrJob(id, FIRST, deps);
+      expect((await get(id)).status).toBe("classified");
+    });
+
     it("runRuleCheck: SecretariatMissingError is permanent", async () => {
       const id = await mkDoc();
       const calls: string[] = [];

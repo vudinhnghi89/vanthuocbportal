@@ -1,9 +1,11 @@
 import { SHUTDOWN_TIMEOUT_MS } from "./config";
 import { handleDeadOcrJob, handleOcrJob } from "./jobs/ocr";
 import { startOcrWorker } from "./queue";
+import { startReconciler } from "./reconcile";
 
 async function main() {
   const worker = await startOcrWorker(handleOcrJob, { deadHandler: (documentId) => handleDeadOcrJob(documentId) });
+  const reconciler = startReconciler();
   console.log("[worker] started");
 
   let stopping = false;
@@ -11,6 +13,7 @@ async function main() {
     if (stopping) return;
     stopping = true;
     console.log(`[worker] ${signal}, stopping`);
+    reconciler.stop();
     try {
       // Chờ job đang chạy xong trong hạn; quá hạn thì job được giao lại ở lần chạy sau.
       await worker.stop(SHUTDOWN_TIMEOUT_MS);
