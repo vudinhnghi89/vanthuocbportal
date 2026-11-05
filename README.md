@@ -39,7 +39,7 @@ Next.js 16 (App Router, TypeScript) + Auth.js (đăng nhập tên/mật khẩu) 
 Trên Ubuntu Server đã có Docker và Dify; đọc `docs/deploy.md` trước khi chạy:
 
 ```bash
-git clone https://github.com/vudinhnghi89/vanthuocbportal && cd vanthuocbportal && git checkout claude/serene-bohr-4c8y7s
+git clone https://github.com/vudinhnghi89/vanthuocbportal && cd vanthuocbportal && git checkout main
 cp .env.example .env && chmod 600 .env   # rồi điền bí mật (POSTGRES_PASSWORD là hex URL-safe, DATABASE_URL tự ghép), AUTH_URL, DIFY_NETWORK theo docs/deploy.md mục 4-5
 docker compose up -d --build && scripts/post-deploy-check.sh
 ```
@@ -83,4 +83,4 @@ npm run e2e                  # Playwright; đặt PW_CHROMIUM_PATH nếu không 
 
 ## Nhánh
 
-Toàn bộ công việc hiện nằm trên nhánh `claude/serene-bohr-4c8y7s`. Nếu chủ sở hữu đã gộp vào `main`, dùng `main` (kiểm tra bằng `git branch -r`).
+Mã nguồn chính nằm trên nhánh `main`. Nhánh `claude/serene-bohr-4c8y7s` là nhánh phát triển, có nội dung giống `main` tại thời điểm bàn giao; khi triển khai luôn dùng `main`.

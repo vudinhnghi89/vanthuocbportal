@@ -92,11 +92,10 @@ Cho người dùng vận hành chạy được docker không cần `sudo` (đăn
 ```bash
 git clone https://github.com/vudinhnghi89/vanthuocbportal
 cd vanthuocbportal
-git branch -r
-git checkout claude/serene-bohr-4c8y7s
+git checkout main
 ```
 
-**Lưu ý nhánh:** hiện toàn bộ công việc nằm trên nhánh `claude/serene-bohr-4c8y7s`. Nếu chủ sở hữu đã gộp vào `main`, `git branch -r` sẽ cho thấy `origin/main` có chứa các file `docker-compose.dify.yml` và `docs/deploy.md` (kiểm tra: `git ls-tree origin/main --name-only | grep docker-compose.dify.yml`); khi đó dùng `git checkout main`. Ghi lại commit đang dùng: `git rev-parse --short HEAD`.
+**Lưu ý nhánh:** luôn triển khai từ nhánh `main` (nhánh `claude/serene-bohr-4c8y7s` chỉ là nhánh phát triển có cùng nội dung lúc bàn giao). Kiểm tra bằng `git branch -r`: phải thấy `origin/main`. Ghi lại commit đang dùng: `git rev-parse --short HEAD`.
 
 ## 4. Cấu hình `.env`
 
@@ -332,7 +331,7 @@ Chạy lần lượt; mỗi bước có kết quả mong đợi. Dừng và báo
 1. `docker --version && docker compose version && git --version` : cả ba in phiên bản (Compose >= 2.20). Nếu thiếu: mục 2.
 2. `ss -ltn | grep -E ':(8080|8443)\s' ; echo "rc=$?"` : không in dòng nào (`rc=1`).
 3. `git clone https://github.com/vudinhnghi89/vanthuocbportal && cd vanthuocbportal` : thư mục repo.
-4. `git branch -r && git checkout claude/serene-bohr-4c8y7s` (hoặc `git checkout main` nếu đã gộp, mục 3) : đã chuyển nhánh; `git rev-parse --short HEAD` in commit.
+4. `git branch -r && git checkout main` (mục 3) : đã chuyển sang `main`; `git rev-parse --short HEAD` in commit.
 5. `cp .env.example .env && chmod 600 .env` : file tạo, quyền 600.
 6. `openssl rand -hex 24; openssl rand -hex 32; openssl rand -hex 32` : ba chuỗi cho `POSTGRES_PASSWORD`, `APP_SECRET`, `AUTH_SECRET`; điền vào `.env` cùng `AUTH_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (mục 4).
 7. `grep -nE '^[A-Z_]+=.*change-me' .env; grep '^AUTH_URL=' .env` : lệnh đầu **không in gì** (dòng nào in ra là còn giá trị mẫu, kể cả `ADMIN_PASSWORD`); lệnh sau in URL thật.
