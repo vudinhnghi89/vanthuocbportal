@@ -1,11 +1,11 @@
 import { HttpError, requireUser, toErrorResponse } from "@/auth/guards";
+import { resolveRevalidateMs } from "@/server/sse-config";
 import { subscribe, TooManySubscribersError, type ServerEvent } from "@/server/events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PING_MS = 25_000;
-const REVALIDATE_MS = 5 * 60_000;
 
 const HEADERS = {
   "Content-Type": "text/event-stream; charset=utf-8",
@@ -45,7 +45,7 @@ export async function GET(request: Request): Promise<Response> {
           close();
         }
       };
-      const revalidateMs = Number(process.env.SSE_REVALIDATE_MS) || REVALIDATE_MS;
+      const revalidateMs = resolveRevalidateMs();
       const ping = setInterval(() => send(": ping\n\n"), PING_MS);
       const revalidate = setInterval(() => {
         requireUser().catch((e) => {

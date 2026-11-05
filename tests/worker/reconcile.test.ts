@@ -5,7 +5,7 @@ import type { Status } from "@/server/status";
 import { dbSuiteMode } from "../db/require-db";
 import { createTestDb } from "../db/test-db";
 import { OCR_QUEUE, getBoss, stopBoss, type QueueOptions } from "@/worker/queue";
-import { reconcileQueuedDocuments, startReconciler } from "@/worker/reconcile";
+import { STUCK_AFTER_SECONDS, failStuckDocuments, reconcileQueuedDocuments, startReconciler } from "@/worker/reconcile";
 
 const mode = dbSuiteMode(process.env);
 
@@ -119,5 +119,52 @@ describe.skipIf(mode !== "run")("reconcileQueuedDocuments", () => {
       errSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  describe("failStuckDocuments", () => {
+    const H = 3600;
+    const statusOf = async (id: string) =>
+      (await t.db.select().from(schema.documents).where(sql`id = ${id}`))[0];
+    const eventsOf = async (id: string) =>
+      (await t.db.select().from(schema.documentEvents).where(sql`document_id = ${id}`)).map((e) => `${e.fromStatus}>${e.toStatus}`);
+
+    it("STUCK_AFTER = 6 giờ, lớn hơn tổng thời gian job có thể chạy", () => {
+      expect(STUCK_AFTER_SECONDS).toBe(6 * H);
+      expect(STUCK_AFTER_SECONDS).toBeGreaterThan(3600 * (3 + 1));
+    });
+
+    it("ocr_processing và rule_checking quá hạn, không còn job -> failed với thông báo; job hợp lệ/mới thì giữ", async () => {
+      const stuckOcr = await mk("ocr_processing", STUCK_AFTER_SECONDS + 60);
+      const stuckRule = await mk("rule_checking", STUCK_AFTER_SECONDS + 60);
+      const recent = await mk("ocr_processing", STUCK_AFTER_SECONDS - 600);
+      const withJob = await mk("ocr_processing", STUCK_AFTER_SECONDS + 60);
+      const classified = await mk("classified", STUCK_AFTER_SECONDS + 60);
+      const boss = await getBoss(queue);
+      await boss.send(OCR_QUEUE, { documentId: withJob }, { singletonKey: withJob });
+
+      const r = await failStuckDocuments(deps);
+      expect(r).toEqual({ failed: 2, skippedWithJob: 1 });
+      for (const id of [stuckOcr, stuckRule]) {
+        expect(await statusOf(id)).toMatchObject({ status: "failed", error: "Công việc OCR bị kẹt, vui lòng chạy lại" });
+      }
+      expect(await eventsOf(stuckOcr)).toContain("ocr_processing>failed");
+      expect(await eventsOf(stuckRule)).toContain("rule_checking>failed");
+      for (const id of [recent, withJob, classified]) expect((await statusOf(id)).status).not.toBe("failed");
+    });
+
+    it("job đã completed/failed cũ không được tính là còn job", async () => {
+      const id = await mk("ocr_processing", STUCK_AFTER_SECONDS + 60);
+      const boss = await getBoss(queue);
+      const jobId = await boss.send(OCR_QUEUE, { documentId: id }, { singletonKey: id });
+      await t.db.execute(sql`update pgboss.job set state = 'completed' where id = ${jobId}`);
+      expect(await failStuckDocuments(deps)).toMatchObject({ failed: 1 });
+      expect((await statusOf(id)).status).toBe("failed");
+    });
+
+    it("chạy lại lần hai không làm gì thêm", async () => {
+      await mk("rule_checking", STUCK_AFTER_SECONDS + 60);
+      expect(await failStuckDocuments(deps)).toMatchObject({ failed: 1 });
+      expect(await failStuckDocuments(deps)).toEqual({ failed: 0, skippedWithJob: 0 });
+    });
   });
 });

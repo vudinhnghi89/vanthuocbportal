@@ -35,6 +35,21 @@ const DEFAULTS = {
   heartbeatSeconds: 120,
 };
 
+/** Dùng để suy ra ngưỡng "văn bản bị kẹt" (reconcile.ts): một job có thể chạy tối đa expire x (retryLimit + 1). */
+export const OCR_EXPIRE_SECONDS = DEFAULTS.expireInSeconds;
+export const OCR_RETRY_LIMIT = DEFAULTS.retryLimit;
+
+/**
+ * Hàng chết: handler chỉ đánh dấu failed nên rẻ, nhưng lỗi DB tạm thời không được làm mất job
+ * => thử lại tối đa 10 lần, giãn cách tăng dần (5s, 10s, ... tối đa 10 phút).
+ */
+export const DEAD_QUEUE_OPTIONS = {
+  retryLimit: 10,
+  retryDelay: 5,
+  retryBackoff: true,
+  retryDelayMax: 600,
+} as const;
+
 let bossPromise: Promise<PgBoss> | null = null;
 let bossSupervises = false;
 
@@ -69,13 +84,10 @@ export function getBoss(options: QueueOptions = {}): Promise<PgBoss> {
     const p = (async () => {
       await boss.start();
       // Hàng chết phải tồn tại trước hàng chính (deadLetter tham chiếu tới nó).
-      await boss.createQueue(OCR_DEAD_QUEUE, {
-        retryLimit: 2,
-        retryDelay: 5,
-        retryBackoff: true,
-      });
-      await boss.createQueue(OCR_QUEUE, {
-        policy: "exclusive", // một job chưa xong (created/retry/active) cho mỗi singletonKey
+      // createQueue không đổi hàng đợi đã tồn tại (bản cũ không có deadLetter/heartbeat) nên luôn updateQueue sau đó.
+      await boss.createQueue(OCR_DEAD_QUEUE, { ...DEAD_QUEUE_OPTIONS });
+      await boss.updateQueue(OCR_DEAD_QUEUE, { ...DEAD_QUEUE_OPTIONS });
+      const ocrOptions = {
         deadLetter: OCR_DEAD_QUEUE,
         // Worker gửi nhịp tim tự động; worker bị kill được phát hiện sau ~heartbeatSeconds thay vì chờ expireInSeconds.
         heartbeatSeconds: options.heartbeatSeconds ?? DEFAULTS.heartbeatSeconds,
@@ -83,7 +95,12 @@ export function getBoss(options: QueueOptions = {}): Promise<PgBoss> {
         retryDelay: DEFAULTS.retryDelay,
         retryBackoff: DEFAULTS.retryBackoff,
         expireInSeconds: DEFAULTS.expireInSeconds,
+      };
+      await boss.createQueue(OCR_QUEUE, {
+        policy: "exclusive", // một job chưa xong (created/retry/active) cho mỗi singletonKey
+        ...ocrOptions,
       });
+      await boss.updateQueue(OCR_QUEUE, ocrOptions);
       return boss;
     })();
     bossPromise = p;

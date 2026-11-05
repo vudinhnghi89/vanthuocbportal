@@ -37,7 +37,24 @@ export type EventsConfig = {
   backoffMinMs?: number;
   backoffMaxMs?: number;
   maxSubscribers?: number;
+  /** Thời hạn truy vấn bổ sung dữ liệu cho một sự kiện (mặc định 10 giây). */
+  loadTimeoutMs?: number;
 };
+
+export const LOAD_TIMEOUT_MS = 10_000;
+
+/** Cấu hình kết nối LISTEN: keepAlive để phát hiện kết nối chết (NAT/firewall cắt kết nối rảnh). */
+export function listenClientConfig(connectionString: string | undefined) {
+  return { connectionString, keepAlive: true };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("load timeout")), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 export const MAX_SUBSCRIBERS = 200;
 
@@ -117,7 +134,8 @@ async function handleNotification(raw: string | undefined): Promise<void> {
   if (!p) return;
   let doc: LoadedDocument | null;
   try {
-    doc = await (config.loadDocument ?? defaultLoadDocument)(p.documentId);
+    // Truy vấn treo không được chặn hàng đợi tuần tự các thông báo phía sau.
+    doc = await withTimeout((config.loadDocument ?? defaultLoadDocument)(p.documentId), config.loadTimeoutMs ?? LOAD_TIMEOUT_MS);
   } catch {
     console.error("[events] không tải được văn bản để phát sự kiện");
     return;
@@ -165,7 +183,7 @@ function scheduleReconnect(): void {
 async function connect(): Promise<void> {
   if (!running) return;
   const gen = generation;
-  const c = new Client({ connectionString: config.connectionString ?? process.env.DATABASE_URL });
+  const c = new Client(listenClientConfig(config.connectionString ?? process.env.DATABASE_URL));
   let handled = false;
   const lost = () => {
     if (handled) return;

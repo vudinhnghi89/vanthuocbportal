@@ -20,6 +20,7 @@ import {
   TooManySubscribersError,
   type ServerEvent,
   type LoadDocument,
+  listenClientConfig,
 } from "@/server/events";
 
 const mode = dbSuiteMode(process.env);
@@ -131,6 +132,30 @@ describe.skipIf(mode !== "run")("server events (LISTEN doc_events)", () => {
     expect(loadDocument).toHaveBeenCalledTimes(1);
     expect(a[0]).toBe(b[0]);
     expect((await listenerBackends()).length).toBe(1); // một kết nối dùng chung
+  });
+
+  it("kết nối LISTEN bật TCP keepAlive", () => {
+    expect(listenClientConfig("postgres://x/y")).toMatchObject({ keepAlive: true, connectionString: "postgres://x/y" });
+  });
+
+  it("truy vấn bổ sung dữ liệu bị treo chỉ bị bỏ qua sau thời hạn, không chặn các sự kiện sau", async () => {
+    const a = await mkDoc();
+    const b = await mkDoc({ filename: "b.pdf" });
+    const loadDocument = vi.fn<LoadDocument>(async (id) => {
+      if (id === a) return new Promise(() => {}); // treo mãi
+      return { filename: "b.pdf", needsManual: false, matchMethod: null, mainUnit: null, infoUnit: null };
+    });
+    configureEvents({ loadDocument, loadTimeoutMs: 100 });
+    const got: ServerEvent[] = [];
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    subscribe((e) => got.push(e));
+    await until(async () => (await listenerBackends()).length === 1);
+    await transition(a, "classified", {}, t.db);
+    await transition(b, "classified", {}, t.db);
+    await until(() => got.length === 1, 3000);
+    expect(got[0]).toMatchObject({ documentId: b });
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it("garbage payloads are ignored; valid ones after still delivered", async () => {

@@ -15,6 +15,16 @@ function head(text: string, max: number): string {
   return Array.from(text).slice(0, max).join("");
 }
 
+/** Tên lớp lỗi an toàn để log; không bao giờ ném (getter `constructor` có thể ném) và chỉ nhận /^\w{1,64}$/. */
+function safeErrorName(err: unknown): string {
+  try {
+    const name = err instanceof Error ? err.constructor.name : "Error";
+    return typeof name === "string" && /^\w{1,64}$/.test(name) ? name : "Error";
+  } catch {
+    return "Error";
+  }
+}
+
 /**
  * Ask the Dify agent which candidate rule fits the document.
  * Any failure yields null (no match); only the error class name is logged.
@@ -37,8 +47,7 @@ export async function disambiguate(
     );
     return candidates.find((r) => r.id === id) ?? null;
   } catch (err) {
-    const name = err instanceof Error ? err.constructor.name : "non-Error";
-    console.warn(`[matching] agent disambiguation failed: ${name}`);
+    console.warn(`[matching] agent disambiguation failed: ${safeErrorName(err)}`);
     return null;
   }
 }

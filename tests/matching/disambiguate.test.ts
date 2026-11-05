@@ -97,6 +97,29 @@ describe("disambiguate", () => {
     for (const bad of [MSG, "SECRET-MESSAGE", markdown, FAKE_KEY, "Title 1"]) expect(text).not.toContain(bad);
   });
 
+  it("không bao giờ ném từ catch: constructor getter ném lỗi -> 'Error'", async () => {
+    const err = new Error("x");
+    Object.defineProperty(err, "constructor", {
+      get() {
+        throw new Error("boom");
+      },
+    });
+    const pick = vi.fn().mockRejectedValue(err);
+    expect(await disambiguate("md", [rule(1), rule(2)], { getSettings, pick })).toBeNull();
+    expect(warn.mock.calls[0].map(String).join(" ")).toMatch(/failed: Error$/);
+  });
+
+  it("tên lớp chứa ký tự lạ hoặc quá dài -> 'Error'", async () => {
+    for (const name of ["Bad\nName\u202e", "x".repeat(65), "", "Evil Name"]) {
+      warn.mockClear();
+      const C = class extends Error {};
+      Object.defineProperty(C, "name", { value: name });
+      const pick = vi.fn().mockRejectedValue(new C("secret"));
+      expect(await disambiguate("md", [rule(1), rule(2)], { getSettings, pick })).toBeNull();
+      expect(warn.mock.calls[0].map(String).join(" ")).toMatch(/failed: Error$/);
+    }
+  });
+
   it("non-Error throw -> null, one warning without the thrown text", async () => {
     const pick = vi.fn().mockRejectedValue("boom-string-secret");
     expect(await disambiguate("md", [rule(1), rule(2)], { getSettings, pick })).toBeNull();

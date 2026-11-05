@@ -32,7 +32,8 @@ export DATABASE_URL="$DBURL" AUTH_SECRET=dummy-smoke-secret APP_SECRET=012345678
   SSE_REVALIDATE_MS=3000
 npm run -s db:migrate
 npm run -s db:seed
-setsid npx next start -p "$PORT" >"$TMP/server.log" 2>&1 &
+# SSE_REVALIDATE_MS is ignored when NODE_ENV=production, so run this smoke with NODE_ENV=test.
+NODE_ENV=test setsid npx next start -p "$PORT" >"$TMP/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 60); do curl -fs "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
 

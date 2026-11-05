@@ -114,6 +114,15 @@ describe.skipIf(mode !== "run")("aliases", () => {
       const row = await r.json();
       expect(row).toMatchObject({ alias: "BYT", canonicalIssuer: "Bộ Y Tế" });
       expect((await POST(json("POST", { alias: "byt ", canonicalIssuer: "Z" }))).status).toBe(409);
+      // chuẩn hóa thành rỗng (chỉ dấu câu / ký tự vô hình) -> 400
+      for (const bad of ["...", "-/-", "\u200b\u00ad", "()"]) {
+        const r = await POST(json("POST", { alias: bad, canonicalIssuer: "Bộ X" }));
+        expect(r.status, bad).toBe(400);
+        expect((await r.json()).code).toBe("invalid_alias");
+      }
+      const rc = await POST(json("POST", { alias: "BXX", canonicalIssuer: "!!!" }));
+      expect(rc.status).toBe(400);
+      expect((await rc.json()).code).toBe("invalid_canonical");
       expect((await POST(json("POST", { alias: "bo y te", canonicalIssuer: "Z" }))).status).toBe(409);
       expect((await POST(json("POST", { alias: "Q", canonicalIssuer: "q." }))).status).toBe(400);
       expect((await POST(json("POST", { alias: "", canonicalIssuer: "Z" }))).status).toBe(400);

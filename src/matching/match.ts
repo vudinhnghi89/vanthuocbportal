@@ -18,6 +18,7 @@ export function matchRules(extracted: Extracted, rules: Rule[], aliases: Alias[]
   const map = new Map<string, string>();
   for (const a of aliases) {
     const k = normalize(a.alias);
+    if (k === "") continue; // bí danh cũ chuẩn hóa thành rỗng không được ánh xạ chuỗi rỗng
     if (!map.has(k)) map.set(k, normalize(a.canonicalIssuer));
   }
   const canon = (s: string): string => {
@@ -31,6 +32,7 @@ export function matchRules(extracted: Extracted, rules: Rule[], aliases: Alias[]
   return rules
     .filter((r) => {
       if (!r.active) return false;
+      if (normalize(r.issuer) === "") return false; // trước canon(): tránh ánh xạ qua khóa rỗng
       const ri = canon(r.issuer);
       if (ri === "" || ri !== issuer) return false;
       const rd = normalize(r.docType);

@@ -21,6 +21,26 @@ export type DocumentEvent = {
 export const DOCUMENTS_CHANGED_EVENT = "documents:changed";
 const EVENTS_URL = "/api/events";
 const REOPEN_MS = 5000;
+const PROBE_URL = "/api/units"; // nhẹ, cần đăng nhập; /api/events chỉ có GET (HEAD sẽ mở luồng)
+
+/** Có thể thay trong test: chuyển về trang đăng nhập khi phiên đã hết hạn. */
+export const navigation = {
+  toLogin: () => {
+    // Tải lại toàn trang (cố ý, không dùng router) để xóa trạng thái phiên cũ.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.href = "/login";
+  },
+};
+
+/** true nếu máy chủ trả 401 (phiên hết hạn / tài khoản bị khóa). Lỗi mạng hoặc 5xx -> false (cứ thử lại). */
+async function sessionExpired(): Promise<boolean> {
+  try {
+    const res = await fetch(PROBE_URL, { method: "GET", cache: "no-store", credentials: "same-origin" });
+    return res.status === 401;
+  } catch {
+    return false;
+  }
+}
 
 // Một EventSource duy nhất cho cả trang, đếm tham chiếu theo số component đang dùng.
 let source: EventSource | null = null;
@@ -89,10 +109,17 @@ function open() {
     if (es.readyState === 2 && source === es) {
       es.close();
       source = null;
-      reopenTimer = setTimeout(() => {
-        reopenTimer = null;
-        if (refs > 0) open();
-      }, REOPEN_MS);
+      void sessionExpired().then((expired) => {
+        if (expired) {
+          navigation.toLogin(); // đăng nhập lại; không tiếp tục thử mở luồng với phiên chết
+          return;
+        }
+        if (refs === 0 || source || reopenTimer) return;
+        reopenTimer = setTimeout(() => {
+          reopenTimer = null;
+          if (refs > 0) open();
+        }, REOPEN_MS);
+      });
     }
   };
 }

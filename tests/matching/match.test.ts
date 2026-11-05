@@ -73,6 +73,15 @@ describe("matchRules", () => {
     expect(matchRules({ issuer: "!!", docType: "??" }, rs, [])).toEqual([]);
     expect(matchRules(ex, rs, [])).toEqual([]);
   });
+  it("bí danh cũ có khóa chuẩn hóa rỗng không làm rule/issuer rỗng khớp nhầm", () => {
+    const legacy: Alias[] = [{ alias: "---", canonicalIssuer: "Bộ Y tế" }];
+    // rule có issuer chỉ dấu câu: normalize = '' -> không được ánh xạ qua bí danh '' thành "Bộ Y tế"
+    const bad = rule({ issuer: "***" });
+    const good = rule({ issuer: "Bộ Y tế" });
+    expect(matchRules(ex, [bad, good], legacy)).toEqual([good]);
+    expect(matchRules({ issuer: "///", docType: "Công văn" }, [bad, good], legacy)).toEqual([]);
+  });
+
   it("does not mutate inputs", () => {
     const rs = [rule({ priority: 1 }), rule({ priority: 2 })];
     const al: Alias[] = [{ alias: "BYT", canonicalIssuer: "Bộ Y tế" }];
