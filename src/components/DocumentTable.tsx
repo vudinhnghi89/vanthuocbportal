@@ -223,6 +223,8 @@ export function DocumentTable() {
 
   const data = result?.data ?? null;
   const error = failure && failure.key === query ? failure.message : null;
+  // Làm mới nền thất bại: giữ các dòng đã tải của đúng truy vấn này, chỉ hiện biểu ngữ lỗi.
+  const hasRows = Boolean(error && result && result.key === query);
   const loading = !rangeInvalid && !error && result?.key !== query;
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const items = data?.items ?? [];
@@ -288,23 +290,24 @@ export function DocumentTable() {
       )}
 
       {error && (
-        <div role="alert" className="doc-error">
-          <span>{error}</span> <button
-              type="button"
-              onClick={() => {
-                setFailure(null);
-                void load();
-              }}
-            >
-              Thử lại
-            </button>
+        <div role="alert" className={hasRows ? "doc-warning doc-error" : "doc-error"}>
+          <span>{hasRows ? `Không cập nhật được danh sách (đang hiển thị dữ liệu cũ): ${error}` : error}</span>{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setFailure(null);
+              void load();
+            }}
+          >
+            Thử lại
+          </button>
         </div>
       )}
 
       {!data && loading ? (
         <p className="muted">Đang tải…</p>
       ) : (
-        !error &&
+        (!error || hasRows) &&
         data &&
         (items.length === 0 ? (
           <p className="muted">{hasFilters ? "Không có văn bản khớp bộ lọc" : "Chưa có văn bản nào"}</p>

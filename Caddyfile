@@ -6,5 +6,8 @@
 	request_body {
 		max_size 210MB
 	}
-	reverse_proxy web:3000
+	reverse_proxy web:3000 {
+		# SSE (/api/events): đẩy từng khung ngay, không đệm phản hồi.
+		flush_interval -1
+	}
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { NotificationBell } from "./NotificationBell";
 
 export function UserHeader({
   username,
@@ -17,6 +18,7 @@ export function UserHeader({
         </Link>
         <nav aria-label="Tài khoản" className="site-header__nav">
           {role === "admin" && <Link href="/admin/units">Quản trị</Link>}
+          <NotificationBell />
           <span className="username">{username}</span>
           <form action={signOutAction}>
             <button type="submit">Đăng xuất</button>
