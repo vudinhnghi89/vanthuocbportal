@@ -4,7 +4,7 @@ import path from "node:path";
 
 /** Thư mục dữ liệu (volume /data khi chạy Docker). Đọc môi trường mỗi lần gọi để test ghi đè được. */
 export function dataDir(): string {
-  return path.resolve(process.env.DATA_DIR || "./data");
+  return path.resolve(/*turbopackIgnore: true*/ process.env.DATA_DIR || "./data");
 }
 
 /**
@@ -46,10 +46,14 @@ export async function saveMarkdown(text: string): Promise<string> {
   return final;
 }
 
+/** Đường dẫn (sau khi resolve) có nằm trong DATA_DIR (hoặc thư mục con `sub` của nó) không. */
+export function isInsideDataDir(filePath: string, sub?: string): boolean {
+  const root = sub ? path.join(/*turbopackIgnore: true*/ dataDir(), sub) : dataDir();
+  return path.resolve(filePath).startsWith(root + path.sep);
+}
+
 /** Xóa tệp PDF; từ chối đường dẫn nằm ngoài DATA_DIR. Tệp không tồn tại thì bỏ qua. */
 export async function deletePdf(filePath: string): Promise<void> {
-  const root = dataDir();
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(root + path.sep)) throw new Error("Đường dẫn nằm ngoài thư mục dữ liệu");
-  await fs.rm(resolved, { force: true });
+  if (!isInsideDataDir(filePath)) throw new Error("Đường dẫn nằm ngoài thư mục dữ liệu");
+  await fs.rm(path.resolve(filePath), { force: true });
 }

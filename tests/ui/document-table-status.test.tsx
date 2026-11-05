@@ -44,12 +44,12 @@ describe("manual status actions", () => {
     expect(within(row).getByRole("button", { name: label })).toBeTruthy();
   });
 
-  it("classified + needsManual shows disabled text, no buttons", async () => {
+  it("classified + needsManual shows a classify link to the detail page, no buttons", async () => {
     handler = withRow({ status: "classified", needsManual: true });
     render(<DocumentTable />);
     const row = (await screen.findByText("cv-01.pdf")).closest("tr")!;
-    const el = within(row).getByText("Cần phân loại", { selector: "[aria-disabled='true']" });
-    expect(el).toBeTruthy();
+    expect(within(row).getByRole("link", { name: "Phân loại" }).getAttribute("href")).toBe(`/documents/${ID}`);
+    expect(within(row).getByRole("link", { name: "cv-01.pdf" }).getAttribute("href")).toBe(`/documents/${ID}`);
     expect(within(row).queryByRole("button", { name: "Chuyển đơn vị xử lý" })).toBeNull();
   });
 

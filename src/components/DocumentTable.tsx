@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { STATUSES, STATUS_LABELS, type Status } from "@/lib/status";
 import { useDocumentsRefresh } from "./useDocumentsRefresh";
@@ -329,7 +330,9 @@ export function DocumentTable() {
               <tbody>
                 {items.map((d) => (
                   <tr key={d.id}>
-                    <th scope="row" className="doc-name">{d.filename}</th>
+                    <th scope="row" className="doc-name">
+                      <Link href={`/documents/${d.id}`}>{d.filename}</Link>
+                    </th>
                     <td>
                       <span className={`badge badge--${d.status}`}>{STATUS_LABELS[d.status] ?? d.status}</span>
                       {d.status === "failed" && d.error && (
@@ -367,11 +370,8 @@ export function DocumentTable() {
                         </button>
                       )}
                       {d.status === "classified" && d.needsManual && (
-                        <span aria-disabled="true" className="muted">
-                          Cần phân loại
-                        </span>
+                        <Link href={`/documents/${d.id}`}>Phân loại</Link>
                       )}
-                      {/* T-6.5: thêm liên kết "Phân loại" cho văn bản classified + needsManual tại đây. */}
                     </td>
                   </tr>
                 ))}
