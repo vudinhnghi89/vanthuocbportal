@@ -1,4 +1,5 @@
 import { requireUser, toErrorResponse } from "@/auth/guards";
+import { listDocuments, parseListQuery } from "@/server/document-list";
 import {
   MAX_FILES,
   MAX_REQUEST_BYTES,
@@ -54,6 +55,18 @@ export async function POST(req: Request): Promise<Response> {
     if (results.some((r) => r.ok)) return Response.json({ results }, { status: 201 });
     const sizeOnly = results.length === 1 && !results[0].ok && results[0].code === "too_large";
     return Response.json({ results }, { status: sizeOnly ? 413 : 400 });
+  } catch (e) {
+    return toErrorResponse(e);
+  }
+}
+
+/** Lưu ý: đường dẫn này bị loại khỏi proxy xác thực nên phải tự gọi requireUser. */
+export async function GET(req: Request): Promise<Response> {
+  try {
+    await requireUser();
+    const parsed = parseListQuery(new URL(req.url).searchParams);
+    if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    return Response.json(await listDocuments(parsed.filters));
   } catch (e) {
     return toErrorResponse(e);
   }

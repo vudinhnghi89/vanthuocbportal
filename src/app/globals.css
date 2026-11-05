@@ -72,3 +72,16 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .upload-row--queued .upload-state { color: var(--ok); }
 .upload-row--error .upload-state { color: var(--danger); }
 .upload-row progress { width: 8rem; }
+.doc-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem .9rem; margin-bottom: .5rem; }
+.doc-filters label { display: flex; flex-direction: column; gap: .2rem; font-size: .9rem; }
+.doc-filters .doc-filters__check { flex-direction: row; align-items: center; gap: .4rem; }
+.doc-table-wrap { overflow-x: auto; }
+.doc-table { width: 100%; border-collapse: collapse; }
+.doc-table th, .doc-table td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.doc-table tbody th { font-weight: 500; word-break: break-word; }
+.doc-error-text { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85rem; }
+.doc-error { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .5rem 0; }
+.doc-pager { display: flex; align-items: center; gap: .75rem; margin-top: .75rem; }
+.badge { display: inline-block; padding: .1rem .5rem; border: 1px solid var(--border); border-radius: 999px; font-size: .8rem; white-space: nowrap; }
+.badge--failed { border-color: #c0392b; }
+.badge--manual { border-color: #b9770e; }

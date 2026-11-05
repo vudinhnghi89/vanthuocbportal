@@ -3,11 +3,11 @@ import {
   bigserial, boolean, check, index, integer, jsonb, pgTable, serial, text,
   timestamp, uniqueIndex, uuid,
 } from "drizzle-orm/pg-core";
+// drizzle-kit không hiểu alias "@/": dùng đường dẫn tương đối.
+import { DOCUMENT_STATUSES } from "../lib/status";
 
 export const USER_ROLES = ["admin", "user"] as const;
-export const DOCUMENT_STATUSES = [
-  "queued", "ocr_processing", "rule_checking", "classified", "unit_processing", "done", "failed",
-] as const;
+export { DOCUMENT_STATUSES };
 export const MATCH_METHODS = ["single", "agent", "none"] as const;
 export const RULE_AUDIT_ACTIONS = ["create", "update", "delete", "toggle"] as const;
 export const INTEGRATION_KEYS = ["dify_ocr", "dify_agent"] as const;
@@ -117,8 +117,10 @@ export const documents = pgTable(
       sql`${t.matchMethod} is null or ${inList("match_method", MATCH_METHODS)}`,
     ),
     index("documents_status_idx").on(t.status),
-    index("documents_created_at_idx").on(t.createdAt),
+    index("documents_status_created_at_idx").on(t.status, t.createdAt.desc()),
+    index("documents_created_at_idx").on(t.createdAt.desc()),
     index("documents_main_unit_idx").on(t.mainUnitId),
+    index("documents_info_unit_idx").on(t.infoUnitId),
   ],
 );
 
