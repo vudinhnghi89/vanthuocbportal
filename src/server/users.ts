@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db as defaultDb } from "@/db/client";
 import { USER_ROLES, users } from "@/db/schema";
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, hashPassword } from "@/lib/password";
+import { isValidPassword, isValidUsername } from "@/lib/credentials";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@/db/schema";
 
@@ -49,7 +50,7 @@ const isUniqueViolation = (e: unknown) => {
 };
 
 function checkPassword(p: unknown): string {
-  if (typeof p !== "string" || p.length < MIN_PASSWORD_LENGTH || p.length > MAX_PASSWORD_LENGTH) throw new UserError("invalid_password");
+  if (!isValidPassword(p)) throw new UserError("invalid_password");
   return p;
 }
 
@@ -64,7 +65,7 @@ export async function createUser(
   db: DbLike = defaultDb,
 ): Promise<PublicUser> {
   const name = typeof username === "string" ? username.trim() : "";
-  if (name.length < 3 || name.length > 50) throw new UserError("invalid_username");
+  if (!isValidUsername(name)) throw new UserError("invalid_username");
   checkPassword(password);
   if (!USER_ROLES.includes(role)) throw new UserError("invalid_role");
   const passwordHash = await hashPassword(password);
