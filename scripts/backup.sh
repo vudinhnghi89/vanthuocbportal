@@ -176,17 +176,27 @@ log "backup complete: $FINAL"
 
 # 6. Retention: only vtp-YYYYmmdd-HHMMSS real directories holding a valid MANIFEST are ever deleted ------
 rc=0
-n=0
+# find does not descend into a starting point that is a symlink: scan the resolved directory instead.
+SCAN_ROOT=$(realpath -e -- "$ROOT_DIR")
+reason=$(unsafe_dir_reason "$SCAN_ROOT")
+[ -z "$reason" ] || die 2 "refusing unsafe backup directory: $reason"
+# The backup just made is always kept and counts as one of the KEEP newest.
+n=1
 while IFS= read -r -d '' d; do
+  [ "$(basename "$d")" = "$NAME" ] && continue
   first=""
   if [ -f "$d/MANIFEST" ] && [ ! -L "$d/MANIFEST" ]; then IFS= read -r first <"$d/MANIFEST" || true; fi
   [ "$first" = "vtp-backup-manifest 1" ] || continue
+  if [[ $(basename "$d") > $NAME ]]; then
+    log "WARNING: existing backup $(basename "$d") is newer than the one just made (system clock went backwards?)"
+  fi
   n=$((n + 1))
   if [ "$n" -gt "$KEEP" ]; then
     log "retention: removing $(basename "$d")"
     rm -rf --one-file-system -- "$d" || { log "WARNING: could not remove $d"; rc=4; }
   fi
-done < <(find "$ROOT_DIR" -mindepth 1 -maxdepth 1 -type d -name 'vtp-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]' -print0 | sort -z -r)
+done < <(find "$SCAN_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'vtp-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]' -print0 | sort -z -r)
+[ -f "$FINAL/db.dump" ] || die 1 "the new backup disappeared after retention: $FINAL"
 
 printf 'BACKUP_PATH=%s\n' "$FINAL"
 exit "$rc"

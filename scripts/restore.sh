@@ -152,18 +152,46 @@ if [ "$has_users" = "t" ]; then
   fi
 fi
 
+STAGE=""
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  if [ "$rc" -ne 0 ]; then
+    case $STAGE in
+      db)
+        log "Phục hồi thất bại; CSDL đích không bị thay đổi (toàn bộ giao dịch, kể cả việc xóa schema pgboss, đã được rollback)."
+        log "Dữ liệu /data chưa bị động tới. Xem lỗi ở trên, sửa nguyên nhân rồi chạy lại restore.sh." ;;
+      data)
+        log "Phục hồi thất bại ở bước giải nén /data: CSDL ĐÃ được phục hồi, còn /data có thể dở dang (bị xóa sạch nếu dùng --wipe-data)."
+        log "Sửa nguyên nhân (quyền ghi, dung lượng) rồi chạy lại restore.sh với --yes --force để phục hồi lại từ đầu." ;;
+    esac
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # 5. Database -----------------------------------------------------------------------------------------
+# One transaction for everything: drop of the pgboss schema (pg_restore --clean cannot drop pg-boss' partitioned
+# tables, and pg-boss owns/migrates that schema anyway) + the whole restore. pg_restore writes SQL to a pipe;
+# "commit" is appended only if pg_restore itself succeeded. If anything fails, psql ends without COMMIT and
+# the server rolls everything back, so the target database is left exactly as it was.
+STAGE=db
 log "restoring database..."
-# pg_restore --clean cannot drop pg-boss' partitioned tables ("cannot drop inherited constraint"), so the whole
-# pgboss schema (owned and migrated by pg-boss itself, and restored from the dump below) is dropped first.
-printf 'drop schema if exists pgboss cascade;\n' | db_psql >/dev/null
 if [ "$MODE" = compose ]; then
-  dc exec -T postgres sh -c "$PG_ENV_PREFIX pg_restore $PG_ENV_ARGS --clean --if-exists --no-owner --single-transaction --exit-on-error" <"$BACKUP/db.dump"
+  pg_restore_sql() { dc exec -T postgres sh -c 'exec pg_restore --clean --if-exists --no-owner -f -' <"$BACKUP/db.dump"; }
 else
-  pg_restore -d "$PGDATABASE" --clean --if-exists --no-owner --single-transaction --exit-on-error "$BACKUP/db.dump"
+  pg_restore_sql() { pg_restore --clean --if-exists --no-owner -f - "$BACKUP/db.dump"; }
 fi
+{
+  printf 'begin;\ndrop schema if exists pgboss cascade;\n'
+  pg_restore_sql
+  printf 'commit;\n'
+} | db_psql >/dev/null
 
 # 6. Data ---------------------------------------------------------------------------------------------
+STAGE=data
 if [ "$HAS_DATA" -eq 1 ]; then
   log "restoring data files..."
   if [ "$MODE" = compose ]; then
@@ -176,6 +204,7 @@ if [ "$HAS_DATA" -eq 1 ]; then
   fi
 fi
 
+STAGE=done
 cat >&2 <<'MSG'
 
 Restore finished. Next steps:

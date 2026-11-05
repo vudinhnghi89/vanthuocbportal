@@ -53,11 +53,11 @@ Lưu ý nhất quán: số dòng trong `MANIFEST`, `db.dump` và `data.tar.gz` �
 Mỗi ngày lúc 02:30, `flock` chống chạy chồng, ghi log, `BACKUP_DIR` trên ổ đĩa khác:
 
 ```cron
-# crontab -e (người dùng có quyền chạy docker)
-30 2 * * * cd /opt/vanthu && flock -n /var/lock/vtp-backup.lock env BACKUP_DIR=/mnt/backup/vtp scripts/backup.sh --keep 14 >> /var/log/vtp-backup.log 2>&1
+# crontab -e (người dùng có quyền chạy docker; log và lock đặt ở nơi người dùng đó ghi được)
+30 2 * * * cd /opt/vanthu && flock -n "$HOME/.vtp-backup.lock" env BACKUP_DIR=/mnt/backup/vtp scripts/backup.sh --keep 14 >> "$HOME/vtp-backup.log" 2>&1
 ```
 
-`flock -n` bỏ qua lượt chạy nếu lượt trước chưa xong. Nhớ xoay vòng log (`logrotate`) và theo dõi mã thoát/dòng `ERROR` trong `/var/log/vtp-backup.log` (hoặc cho cron gửi mail).
+`flock -n` bỏ qua lượt chạy nếu lượt trước chưa xong. Nhớ xoay vòng log (`logrotate`) và theo dõi mã thoát/dòng `ERROR` trong `$HOME/vtp-backup.log`. Muốn ghi vào `/var/log` hoặc `/var/lock`, hãy đặt dòng cron trong crontab của root (`sudo crontab -e`) hoặc cấp quyền ghi cho người dùng đó (hoặc cho cron gửi mail).
 
 Thay thế bằng systemd timer:
 
@@ -124,7 +124,9 @@ Thứ tự bắt buộc: **cơ sở dữ liệu, rồi dữ liệu, rồi mới 
    ```
    Script kiểm tra `SHA256SUMS`, đọc thử `db.dump`, kiểm tra `data.tar.gz` (từ chối đường dẫn tuyệt đối, `..`, symlink/hardlink), rồi phục hồi database trong một transaction (`pg_restore --clean --if-exists --no-owner`) và giải nén dữ liệu vào `/data` mà không xóa file khác (thêm `--wipe-data` để làm sạch `/data` trước).
    - Database đích đã có người dùng thì script **từ chối** (mã 4); chỉ thêm `--force` khi chắc chắn muốn ghi đè.
-   - Schema `pgboss` được xóa và dựng lại từ bản sao lưu.
+   - Schema `pgboss` được xóa và dựng lại từ bản sao lưu. Việc xóa và toàn bộ phục hồi database nằm trong **một giao dịch**: nếu lỗi, database đích giữ nguyên như trước và script in thông báo tiếng Việt nêu rõ tình trạng. Chỉ bước giải nén `/data` nằm ngoài giao dịch (nếu lỗi ở bước này, database đã được phục hồi và script báo rõ).
+   - Phục hồi đè (`--force`) bản sao lưu cũ lên database có schema **mới hơn** (đã chạy thêm migration) sẽ để lại các bảng/cột thừa không có trong bản sao lưu; hãy chạy lại migration (`npm run db:migrate` hoặc khởi động lại `web`) và ưu tiên phục hồi vào database trống.
+   - File dữ liệu được giải nén với quyền theo `umask` của tiến trình (mặc định 0644 / thư mục 0755, script đặt `umask 022`). Muốn chặt hơn, đổi quyền thư mục `/data` sau khi phục hồi (người dùng chạy `web`/`worker` phải đọc/ghi được).
 6. Khởi động toàn bộ: `docker compose up -d`.
 7. Kiểm tra:
    - `curl -fs http://127.0.0.1:8080/api/health` (hoặc địa chỉ công khai) trả về OK.
@@ -143,7 +145,7 @@ Sao lưu chưa từng được phục hồi thử thì chưa đáng tin. Mỗi q
 - [ ] `scripts/restore.sh <thư mục>` (xem kế hoạch), rồi `--yes`; ghi lại thời gian thực hiện.
 - [ ] `/api/health` OK; số dòng trong ứng dụng khớp `MANIFEST`; mở được vài PDF và bản Markdown.
 - [ ] Đăng nhập bằng tài khoản thật (hash mật khẩu phục hồi đúng); API key Dify giải mã được với `APP_SECRET` đã lưu riêng, hoặc xác nhận quy trình nhập lại.
-- [ ] Cron/timer đang chạy: kiểm tra `/var/log/vtp-backup.log`, ngày của bản mới nhất, dung lượng ổ đĩa.
+- [ ] Cron/timer đang chạy: kiểm tra `$HOME/vtp-backup.log`, ngày của bản mới nhất, dung lượng ổ đĩa.
 - [ ] Xóa môi trường thử và mọi bản giải mã tạm.
 
 ## 8. Bảo mật file sao lưu

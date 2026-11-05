@@ -293,6 +293,40 @@ describe.skipIf(mode !== "run")("backup.sh / restore.sh (direct mode, real datab
       expect(fs.existsSync(path.join(dir, "notes", "a.txt"))).toBe(true);
     });
 
+    it("retention works when BACKUP_DIR is a symlink, and never follows symlinked children", () => {
+      const real = mk("ret-real");
+      const link = path.join(tmp, "ret-link");
+      fs.symlinkSync(real, link);
+      const manifest = "vtp-backup-manifest 1\n";
+      for (const n of ["vtp-20200101-000000", "vtp-20200102-000000", "vtp-20200103-000000"]) {
+        fs.mkdirSync(path.join(real, n));
+        fs.writeFileSync(path.join(real, n, "MANIFEST"), manifest);
+      }
+      const outside = mk("ret-outside");
+      fs.writeFileSync(path.join(outside, "MANIFEST"), manifest);
+      fs.writeFileSync(path.join(outside, "important.txt"), "keep");
+      fs.symlinkSync(outside, path.join(real, "vtp-20100101-000000"));
+      const r = run(BACKUP_SH, ["--keep", "2", "--dir", link], baseEnv(), tmp);
+      expect(r.status, r.stderr).toBe(0);
+      const created = path.basename(r.stdout.trim().replace("BACKUP_PATH=", ""));
+      expect(fs.readdirSync(real).sort()).toEqual(["vtp-20100101-000000", "vtp-20200103-000000", created].sort());
+      expect(fs.readFileSync(path.join(outside, "important.txt"), "utf8")).toBe("keep");
+    });
+
+    it("never deletes the backup it just made, even when newer-named backups exist (clock skew)", () => {
+      const dir = mk("ret-skew");
+      for (const n of ["vtp-29990101-000000", "vtp-29990102-000000", "vtp-29990103-000000"]) {
+        fs.mkdirSync(path.join(dir, n));
+        fs.writeFileSync(path.join(dir, n, "MANIFEST"), "vtp-backup-manifest 1\n");
+      }
+      const r = run(BACKUP_SH, ["--keep", "2", "--dir", dir], baseEnv(), tmp);
+      expect(r.status, r.stderr).toBe(0);
+      const created = r.stdout.trim().replace("BACKUP_PATH=", "");
+      expect(fs.existsSync(path.join(created, "db.dump"))).toBe(true);
+      expect(r.stderr).toMatch(/WARNING.*clock/i);
+      expect(fs.readdirSync(dir).sort()).toEqual(["vtp-29990103-000000", path.basename(created)].sort());
+    });
+
     it("rejects invalid --keep values", () => {
       for (const k of ["0", "-1", "abc", ""]) {
         const r = run(BACKUP_SH, ["--keep", k, "--dir", path.join(tmp, "k")], baseEnv(), tmp);
@@ -440,6 +474,35 @@ describe.skipIf(mode !== "run")("backup.sh / restore.sh (direct mode, real datab
       expect(fs.existsSync(path.join(data, "keep.txt"))).toBe(false);
       expect(walk(data).sort()).toEqual(Object.keys(dataFiles).sort());
     }, 90_000);
+
+    it("a failing pg_restore rolls back everything (including the pgboss drop) and says so", async () => {
+      const target = await newEmptyDb();
+      const data = mk("rollback-data");
+      const ok = run(RESTORE_SH, [good, "--yes"], restoreEnv(target.url, data), tmp);
+      expect(ok.status, ok.stderr).toBe(0);
+      const snap = async () => {
+        const p = new Pool({ connectionString: target.url });
+        p.on("error", () => {});
+        try {
+          const users = (await p.query("select id, username, password_hash from users order by id")).rows;
+          const jobs = Number((await p.query("select count(*) c from pgboss.job")).rows[0].c);
+          const docs = Number((await p.query("select count(*) c from documents")).rows[0].c);
+          return { users, jobs, docs };
+        } finally {
+          await p.end();
+        }
+      };
+      const before = await snap();
+      const bad = copyBackup("truncated");
+      const size = fs.statSync(path.join(bad, "db.dump")).size;
+      fs.truncateSync(path.join(bad, "db.dump"), size - 64);
+      rewriteSums(bad);
+      const r = run(RESTORE_SH, [bad, "--yes", "--force"], restoreEnv(target.url, data), tmp);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("Phục hồi thất bại");
+      expect(r.stderr).toContain("không bị thay đổi");
+      expect(await snap()).toEqual(before);
+    }, 60_000);
 
     it.each([
       ["parent traversal", () => ["../evil", "pdf/ok.pdf"], "evil"],
@@ -594,8 +657,11 @@ exit 99
       const restore = all.find((c) => c.join(" ").includes("pg_restore") && !c.join(" ").includes("--list"));
       expect(restore).toBeDefined();
       expect(restore!.slice(0, base.length + 3)).toEqual([...base, "postgres", "sh", "-c"]);
-      expect(restore![base.length + 3]).toContain('PGPASSWORD="$POSTGRES_PASSWORD"');
+      // pg_restore only converts the archive to SQL (no connection); psql applies it in one transaction.
+      const apply = all.filter((c) => c.join(" ").includes("psql")).pop();
+      expect(apply![base.length + 3]).toContain('PGPASSWORD="$POSTGRES_PASSWORD"');
       expect(restore![base.length + 3]).toMatch(/--clean --if-exists --no-owner/);
+      expect(restore![base.length + 3]).not.toMatch(/ -d /);
       expect(all).toContainEqual([...base, "web", "tar", "-C", "/data", "-xzof", "-"]);
       expect(fs.readFileSync(log, "utf8")).not.toContain("hunter2-SECRET");
       expect(r.stderr).toMatch(/WARNING: web and\/or worker are running/); // warns that web/worker are running
