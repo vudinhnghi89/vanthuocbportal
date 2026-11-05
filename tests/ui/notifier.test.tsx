@@ -54,7 +54,34 @@ describe("Notifier toasts", () => {
     expect(within(region()).getByText(/Đơn vị nhận thông tin: —$/)).toBeTruthy();
   });
 
-  it.each([{ needsManual: true }, { matchMethod: "none" }])("manual classification message (%j)", (o) => {
+  const PENDING = 'Văn bản "cv-01.pdf" chưa khớp rule → chuyển Ban thư ký để phân loại thủ công';
+  const MANUAL_DONE =
+    'Văn bản "cv-01.pdf" đã được Ban thư ký phân loại — Đơn vị xử lý chính: Phòng A; Đơn vị nhận thông tin: Phòng B';
+
+  it("auto classification still waiting for a human shows the pending wording", () => {
+    render(<App />);
+    emit({ needsManual: true, matchMethod: "none", mainUnit: null });
+    expect(within(region()).getByText(PENDING)).toBeTruthy();
+  });
+
+  it("manual classification event (classified -> classified) shows final units, not pending wording", () => {
+    render(<App />);
+    emit({ from: "classified", needsManual: false, matchMethod: "none" });
+    expect(within(region()).getByText(MANUAL_DONE)).toBeTruthy();
+    expect(screen.queryByText(PENDING)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Thông báo/ }));
+    const panel = screen.getByRole("region", { name: "Danh sách thông báo" });
+    expect(within(panel).getByText(MANUAL_DONE)).toBeTruthy();
+    expect(within(panel).queryByText(PENDING)).toBeNull();
+  });
+
+  it("manual classification without info unit shows a dash", () => {
+    render(<App />);
+    emit({ from: "classified", needsManual: false, matchMethod: "none", infoUnit: null });
+    expect(within(region()).getByText(/đã được Ban thư ký phân loại — .*Đơn vị nhận thông tin: —$/)).toBeTruthy();
+  });
+
+  it.each([{ needsManual: true }])("manual classification message (%j)", (o) => {
     render(<App />);
     emit(o);
     expect(within(region()).getByText(

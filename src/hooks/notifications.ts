@@ -11,10 +11,14 @@ type Snapshot = { items: readonly AppNotification[]; unread: number };
 /** Nội dung thông báo cho một sự kiện, hoặc null nếu trạng thái đó không cần thông báo. */
 export function notificationText(e: DocumentEvent): string | null {
   if (e.status === "classified") {
-    if (e.needsManual || e.matchMethod === "none") {
+    // needsManual=true: còn chờ người phân loại. match_method='none' giữ nguyên sau khi phân loại thủ công.
+    if (e.needsManual) {
       return `Văn bản "${e.filename}" chưa khớp rule → chuyển Ban thư ký để phân loại thủ công`;
     }
-    return `Văn bản "${e.filename}" đã phân loại — Đơn vị xử lý chính: ${e.mainUnit?.name ?? "—"}; Đơn vị nhận thông tin: ${e.infoUnit?.name ?? "—"}`;
+    const units = `Đơn vị xử lý chính: ${e.mainUnit?.name ?? "—"}; Đơn vị nhận thông tin: ${e.infoUnit?.name ?? "—"}`;
+    // classified -> classified: phân loại thủ công vừa hoàn tất.
+    if (e.from === "classified") return `Văn bản "${e.filename}" đã được Ban thư ký phân loại — ${units}`;
+    return `Văn bản "${e.filename}" đã phân loại — ${units}`;
   }
   if (e.status === "failed") return `Văn bản "${e.filename}" xử lý lỗi`;
   return null;
