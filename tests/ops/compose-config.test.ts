@@ -29,8 +29,8 @@ function config(files: string[]): Record<string, Svc> {
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
-      POSTGRES_PASSWORD: "x",
-      DATABASE_URL: "postgres://vanthu:x@postgres:5432/vanthu",
+      // Không đặt DATABASE_URL: compose phải tự ghép từ POSTGRES_PASSWORD.
+      POSTGRES_PASSWORD: "s3cret-._~Pw",
       APP_SECRET: "x".repeat(40),
       AUTH_SECRET: "x",
       ADMIN_USERNAME: "admin",
@@ -88,6 +88,23 @@ describe.skipIf(!hasCompose)("docker-compose.yml (docker compose config)", () =>
     for (const [n, s] of Object.entries(svc)) {
       expect(s.mem_limit ?? s.deploy?.resources?.limits?.memory, `${n} thiếu mem_limit`).toBeTruthy();
     }
+  });
+
+  it("web, worker, migrate đều nhận DATABASE_URL (environment) ghép từ POSTGRES_PASSWORD", () => {
+    for (const n of ["web", "worker", "migrate"]) {
+      expect(svc[n].environment?.DATABASE_URL, n).toBe("postgres://vanthu:s3cret-._~Pw@postgres:5432/vanthu");
+    }
+    expect(Object.keys(svc.postgres.environment ?? {})).not.toContain("DATABASE_URL");
+  });
+
+  it("thiếu POSTGRES_PASSWORD -> compose config thất bại", () => {
+    const r = spawnSync("docker", ["compose", "config", "--format", "json"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, APP_SECRET: "x".repeat(40), AUTH_SECRET: "x", ADMIN_USERNAME: "a", ADMIN_PASSWORD: "password-1" } as unknown as NodeJS.ProcessEnv,
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("POSTGRES_PASSWORD");
   });
 
   it("mỗi service chỉ nhận biến cần thiết (không lộ ADMIN_PASSWORD/POSTGRES_PASSWORD cho web/worker)", () => {

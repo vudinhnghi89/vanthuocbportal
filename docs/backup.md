@@ -107,7 +107,7 @@ hoặc với `gpg`: `tar -C /mnt/backup/vtp -cf - vtp-20261105-023000 | gpg --en
 
 Thứ tự bắt buộc: **cơ sở dữ liệu, rồi dữ liệu, rồi mới khởi động dịch vụ ứng dụng.**
 
-1. Cài Docker, lấy mã nguồn đúng phiên bản (xem `git_commit` trong `MANIFEST`), tạo `.env` từ bản đã lưu riêng, **giữ nguyên `APP_SECRET` cũ** (và `POSTGRES_PASSWORD`/`DATABASE_URL` khớp nhau).
+1. Cài Docker, lấy mã nguồn đúng phiên bản (xem `git_commit` trong `MANIFEST`), tạo `.env` từ bản đã lưu riêng, **giữ nguyên `APP_SECRET` cũ** (và `POSTGRES_PASSWORD` cũ, URL-safe: `DATABASE_URL` được Compose tự ghép từ đó).
 2. Chép thư mục sao lưu về (giải mã nếu đã mã hóa), ví dụ `/mnt/backup/vtp/vtp-20261105-023000`.
 3. Chỉ khởi động Postgres và `web` (cần container `web` để ghi vào volume `/data`), không khởi động `worker`:
    ```bash

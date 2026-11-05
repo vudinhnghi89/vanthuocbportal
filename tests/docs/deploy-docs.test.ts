@@ -61,7 +61,8 @@ describe("biến môi trường trong docs/deploy.md", () => {
   const deploy = read("docs/deploy.md");
 
   // `NAME=` ở đầu dòng hoặc trong mã (kể cả `NAME=...` đặt sau khoảng trắng/dấu nháy) và `${NAME`.
-  const OS_VARS = new Set(["UBUNTU_CODENAME", "VERSION_CODENAME"]); // biến của /etc/os-release trong lệnh cài Docker
+  // Biến của /etc/os-release trong lệnh cài Docker và biến của chính Dify (docker/.env của Dify, không thuộc repo này).
+  const OS_VARS = new Set(["UBUNTU_CODENAME", "VERSION_CODENAME", "UPLOAD_FILE_SIZE_LIMIT", "NGINX_CLIENT_MAX_BODY_SIZE", "GUNICORN_TIMEOUT"]);
   const names = new Set([
     ...uniq(/(?:^|[\s`'"(])([A-Z][A-Z0-9_]{2,})=/gm, deploy),
     ...uniq(/\$\{([A-Z][A-Z0-9_]+)/g, deploy),
@@ -112,5 +113,46 @@ describe("lệnh kiểm tra giá trị mẫu trong docs/deploy.md", () => {
     const ok = grepOn(filled);
     expect(ok.status).toBe(1);
     expect(ok.out).toBe("");
+  });
+});
+
+describe("nội dung bắt buộc của tài liệu triển khai", () => {
+  const deploy = read("docs/deploy.md");
+  const readme = read("README.md");
+
+  it("giới hạn Dify: UPLOAD_FILE_SIZE_LIMIT=50, nginx 50M, GUNICORN_TIMEOUT, MAX_FILE_BYTES, dòng sự cố 413, mục checklist", () => {
+    for (const t of ["UPLOAD_FILE_SIZE_LIMIT=50", "NGINX_CLIENT_MAX_BODY_SIZE", "50M", "GUNICORN_TIMEOUT", "MAX_FILE_BYTES", "src/lib/upload-plan.ts"]) {
+      expect(deploy, t).toContain(t);
+    }
+    expect(deploy).toMatch(/^\| `HTTP 413` từ Dify/m);
+    expect(deploy).toMatch(/^7b\. \*\*Kiểm tra giới hạn Dify TRƯỚC/m);
+    expect(read("src/lib/upload-plan.ts")).toContain("MAX_FILE_BYTES");
+  });
+
+  it("DATABASE_URL do Compose ghép: không còn trong .env.example, docs nêu POSTGRES_PASSWORD URL-safe", () => {
+    expect(read(".env.example")).not.toMatch(/^DATABASE_URL=/m);
+    expect(deploy).toContain("URL-safe");
+    expect(deploy).not.toMatch(/^\| `DATABASE_URL` \|/m);
+    expect(read("docker-compose.yml")).toContain("postgres://vanthu:${POSTGRES_PASSWORD");
+  });
+
+  it("HTTPS: --base-url và --insecure được nêu và script hỗ trợ", () => {
+    expect(deploy).toContain("--base-url");
+    expect(deploy).toContain("--insecure");
+    const script = read("scripts/post-deploy-check.sh");
+    expect(script).toContain("--base-url)");
+    expect(script).toContain("--insecure)");
+  });
+
+  it("README sửa lời về phân loại thủ công và có mục 'Giới hạn đã biết' (README và deploy.md)", () => {
+    expect(readme).not.toContain("xác nhận hoặc đổi đơn vị");
+    expect(readme).toMatch(/^## Giới hạn đã biết/m);
+    expect(deploy).toMatch(/^## 13\. Giới hạn đã biết/m);
+    for (const doc of [readme, deploy]) {
+      expect(doc).toContain("mọi người đăng nhập đều nhận mọi thông báo");
+      expect(doc).toContain("không có rule \"mọi loại\"");
+      expect(doc).toMatch(/Chỉ \*\*admin\*\* tạo\/sửa được rule/);
+      expect(doc).toContain("không đổi hướng được");
+    }
   });
 });

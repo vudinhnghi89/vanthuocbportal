@@ -7,8 +7,16 @@ Cổng web cho đơn vị văn thư: tải lên công văn PDF (bản scan), h�
 1. Văn thư đăng nhập và tải lên một hoặc nhiều PDF (tối đa 50 MB mỗi tệp).
 2. Worker gửi PDF cho workflow OCR của Dify, nhận markdown và thông tin trích xuất (cơ quan ban hành, loại công văn, tiêu đề, tóm tắt).
 3. Hệ thống chuẩn hóa tên cơ quan (bí danh), lọc rule đang hoạt động; khi có nhiều ứng viên thì hỏi agent của Dify để chọn một rule.
-4. Văn thư xem kết quả, mở PDF gốc, xác nhận hoặc đổi đơn vị, chuyển trạng thái xử lý. Thông báo thời gian thực qua SSE.
+4. Văn thư xem kết quả, mở PDF gốc, chuyển trạng thái xử lý. Chỉ văn bản bị đánh dấu cần phân loại thủ công (không khớp rule nào) mới được văn thư chọn đơn vị bằng tay; văn bản đã khớp rule thì đơn vị do rule quyết định. Thông báo thời gian thực qua SSE.
 5. Quản trị viên quản lý đơn vị, rule (có lịch sử), bí danh cơ quan, người dùng và cấu hình tích hợp Dify.
+
+## Giới hạn đã biết
+
+- Người dùng không thuộc đơn vị nào: mọi người đăng nhập đều nhận mọi thông báo (bảng văn bản có bộ lọc theo đơn vị).
+- Một rule cần khớp chính xác cả **Cơ quan ban hành** lẫn **Loại công văn** (không có rule "mọi loại").
+- Chỉ **admin** tạo/sửa được rule: nhân sự Ban thư ký phụ trách rule cần vai trò admin.
+- Văn bản bị khớp rule sai tự động không đổi hướng được trên giao diện (cách xử lý: admin sửa rule rồi tải lên lại).
+- Dify mặc định giới hạn tải lên 15 MB trong khi portal nhận tới 50 MB: phải chỉnh Dify trước khi dùng thật (`docs/deploy.md` mục 8.1).
 
 ## Kiến trúc
 
@@ -31,7 +39,7 @@ Trên Ubuntu Server đã có Docker và Dify; đọc `docs/deploy.md` trước k
 
 ```bash
 git clone https://github.com/vudinhnghi89/vanthuocbportal && cd vanthuocbportal && git checkout claude/serene-bohr-4c8y7s
-cp .env.example .env && chmod 600 .env   # rồi điền bí mật, AUTH_URL, DIFY_NETWORK theo docs/deploy.md mục 4-5
+cp .env.example .env && chmod 600 .env   # rồi điền bí mật (POSTGRES_PASSWORD là hex URL-safe, DATABASE_URL tự ghép), AUTH_URL, DIFY_NETWORK theo docs/deploy.md mục 4-5
 docker compose up -d --build && scripts/post-deploy-check.sh
 ```
 

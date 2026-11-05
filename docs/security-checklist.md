@@ -61,7 +61,7 @@ Ngoài guard trong route, `src/proxy.ts` chặn mọi yêu cầu chưa đăng nh
 
 - `APP_SECRET`: đổi → API key Dify đã lưu **không giải mã được**. Trang cấu hình hiển thị cảnh báo "không đọc được", "Kiểm tra kết nối" báo lỗi rõ ràng, và lần lưu kế tiếp **bắt buộc nhập lại key**. Worker báo lỗi cấu hình cho tới khi nhập lại.
 - `AUTH_SECRET`: đổi → mọi phiên đăng nhập hiện tại mất hiệu lực (đăng nhập lại), không mất dữ liệu.
-- Mật khẩu Postgres (`POSTGRES_PASSWORD`) đổi cùng lúc ở `.env` (`DATABASE_URL`) và trong Postgres.
+- Mật khẩu Postgres (`POSTGRES_PASSWORD`) đổi cùng lúc ở `.env` (`DATABASE_URL` tự ghép theo) và trong Postgres; phải URL-safe (`openssl rand -hex 24`).
 
 ## 4. Rủi ro đã biết và chấp nhận
 

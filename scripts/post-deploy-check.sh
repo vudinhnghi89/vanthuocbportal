@@ -1,23 +1,36 @@
 #!/usr/bin/env bash
 # Kiểm tra SAU triển khai, chỉ đọc (không sửa gì, không in bí mật). Chạy trên máy chủ, trong thư mục repo:
-#   scripts/post-deploy-check.sh [--port 8080] [--tls-port 8443]
+#   scripts/post-deploy-check.sh [--port 8080] [--tls-port 8443] [--base-url URL] [--insecure]
+# --base-url: địa chỉ dùng cho kiểm tra health/login/401/header (mặc định http://127.0.0.1:${HTTP_PORT:-8080}). Sau khi bật
+#   HTTPS hãy truyền https://<tên miền> (hoặc https://127.0.0.1:8443). --insecure (curl -k) chỉ dùng khi chứng chỉ tự ký.
 # In bảng PASS/WARN/FAIL; mã thoát 1 nếu có FAIL, 0 nếu không (WARN không làm hỏng).
 # Dùng `docker compose` theo COMPOSE_FILE (từ môi trường hoặc .env) nên tự nhận override docker-compose.dify.yml.
 # Cần: docker (compose plugin), curl; tùy chọn: ss, df, free.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-PORT=8080
+PORT="${HTTP_PORT:-8080}"
 TLS_PORT=8443
+BASE_URL=""
+INSECURE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) PORT="${2:?--port cần giá trị}"; shift 2 ;;
     --tls-port) TLS_PORT="${2:?--tls-port cần giá trị}"; shift 2 ;;
-    -h | --help) sed -n 2,6p "$0"; exit 0 ;;
+    --base-url) BASE_URL="${2:?--base-url cần giá trị}"; shift 2 ;;
+    --insecure) INSECURE=1; shift ;;
+    -h | --help) sed -n 2,8p "$0"; exit 0 ;;
     *) echo "Tham số không hợp lệ: $1" >&2; exit 2 ;;
   esac
 done
-BASE="http://127.0.0.1:${PORT}"
+case "$BASE_URL" in
+  "" | http://* | https://*) ;;
+  *) echo "--base-url phải bắt đầu bằng http:// hoặc https://" >&2; exit 2 ;;
+esac
+BASE="${BASE_URL:-http://127.0.0.1:${PORT}}"
+BASE="${BASE%/}"
+CURL_OPTS=()
+[ "$INSECURE" -eq 1 ] && CURL_OPTS+=(-k)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -69,7 +82,7 @@ fi
 # 2. HTTP qua Caddy.
 http_code() {
   local c
-  c="$(curl -sS -m 10 -o "$TMP/body" -w '%{http_code}' "$@" 2>/dev/null || true)"
+  c="$(curl ${CURL_OPTS[@]+"${CURL_OPTS[@]}"} -sS -m 10 -o "$TMP/body" -w '%{http_code}' "$@" 2>/dev/null || true)"
   printf '%s' "${c:-000}"
 }
 code="$(http_code "$BASE/api/health")"
@@ -88,7 +101,7 @@ else
 fi
 
 # 3. Header bảo mật xuất hiện đúng một lần.
-curl -sS -m 10 -D "$TMP/headers" -o /dev/null "$BASE/login" 2>/dev/null || : >"$TMP/headers"
+curl ${CURL_OPTS[@]+"${CURL_OPTS[@]}"} -sS -m 10 -D "$TMP/headers" -o /dev/null "$BASE/login" 2>/dev/null || : >"$TMP/headers"
 for h in x-content-type-options x-frame-options; do
   n="$(grep -ci "^$h:" "$TMP/headers" || true)"
   if [ "$n" = "1" ]; then report PASS "header $h" "đúng một lần"; else report FAIL "header $h" "xuất hiện $n lần (kỳ vọng 1)"; fi
@@ -132,10 +145,17 @@ fi
 if [ -f .env ]; then
   mode="$(stat -c '%a' .env 2>/dev/null || echo "?")"
   if [ "$mode" = "600" ]; then report PASS ".env quyền truy cập" "600"; else report WARN ".env quyền truy cập" "là $mode, nên chmod 600 .env"; fi
-  if grep -Eq '^(POSTGRES_PASSWORD|DATABASE_URL|APP_SECRET|AUTH_SECRET)=.*change-me' .env; then
-    report FAIL ".env còn giá trị mẫu" "một bí mật (POSTGRES_PASSWORD/DATABASE_URL/APP_SECRET/AUTH_SECRET) vẫn là change-me"
+  if grep -Eq '^(POSTGRES_PASSWORD|APP_SECRET|AUTH_SECRET)=.*change-me' .env; then
+    report FAIL ".env còn giá trị mẫu" "một bí mật (POSTGRES_PASSWORD/APP_SECRET/AUTH_SECRET) vẫn là change-me"
   else
     report PASS ".env không còn giá trị mẫu" "ok"
+  fi
+  pw="$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | tail -n 1)"
+  pw="${pw%\"}"; pw="${pw#\"}"; pw="${pw%\'}"; pw="${pw#\'}"
+  if [ -n "$pw" ] && ! printf '%s' "$pw" | grep -Eq '^[A-Za-z0-9._~-]+$'; then
+    report FAIL "POSTGRES_PASSWORD URL-safe" "chứa ký tự ngoài [A-Za-z0-9._~-] nên DATABASE_URL ghép sẵn sẽ hỏng; tạo lại bằng: openssl rand -hex 24"
+  elif [ -n "$pw" ]; then
+    report PASS "POSTGRES_PASSWORD URL-safe" "ok"
   fi
   if grep -Eq '^ADMIN_PASSWORD=change-me' .env; then
     report WARN "ADMIN_PASSWORD" "vẫn là giá trị mẫu: đổi mật khẩu admin tại Quản trị > Người dùng nếu vẫn là mật khẩu mẫu"

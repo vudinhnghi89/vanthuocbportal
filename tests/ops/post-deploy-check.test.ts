@@ -23,6 +23,7 @@ esac
 
 const CURL_STUB = `#!/usr/bin/env bash
 out=""; hdr=""; url=""
+printf '%s\n' "$*" >>"$STUB_DIR/curl.log"
 while [ $# -gt 0 ]; do
   case "$1" in -o) out="$2"; shift 2 ;; -D) hdr="$2"; shift 2 ;; -w|-m) shift 2 ;; -*) shift ;; *) url="$1"; shift ;; esac
 done
@@ -83,12 +84,18 @@ beforeAll(() => {
 
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-function run(env: Record<string, string> = {}, ps = GOOD_PS, dotenv: string | null = "APP_SECRET=abc\nAUTH_URL=http://10.0.0.5:8080\n") {
+function run(
+  env: Record<string, string> = {},
+  ps = GOOD_PS,
+  dotenv: string | null = "APP_SECRET=abc\nAUTH_URL=http://10.0.0.5:8080\n",
+  args: string[] = [],
+) {
   fs.writeFileSync(path.join(tmp, "ps.txt"), `${ps}\n`);
+  fs.rmSync(path.join(tmp, "curl.log"), { force: true });
   const envFile = path.join(repo, ".env");
   fs.rmSync(envFile, { force: true });
   if (dotenv !== null) fs.writeFileSync(envFile, dotenv, { mode: 0o600 });
-  const r = spawnSync("bash", [path.join(repo, "scripts/post-deploy-check.sh")], {
+  const r = spawnSync("bash", [path.join(repo, "scripts/post-deploy-check.sh"), ...args], {
     encoding: "utf8",
     env: { PATH: `${bin}:${process.env.PATH}`, HOME: tmp, STUB_DIR: tmp, ...env } as unknown as NodeJS.ProcessEnv,
   });
@@ -155,7 +162,7 @@ describe("post-deploy-check.sh với docker/curl giả", () => {
   });
 
   it("từng bí mật còn change-me -> FAIL; ADMIN_PASSWORD mẫu chỉ WARN", () => {
-    for (const k of ["POSTGRES_PASSWORD=change-me", "DATABASE_URL=postgres://vanthu:change-me@postgres:5432/vanthu", "AUTH_SECRET=change-me"]) {
+    for (const k of ["POSTGRES_PASSWORD=change-me", "AUTH_SECRET=change-me"]) {
       const r = run({}, GOOD_PS, `${k}\nAUTH_URL=http://10.0.0.5:8080\n`);
       expect(r.status, k).toBe(1);
       expect(r.out).toMatch(/FAIL\s+\.env còn giá trị mẫu/);
@@ -163,6 +170,50 @@ describe("post-deploy-check.sh với docker/curl giả", () => {
     const w = run({}, GOOD_PS, "ADMIN_PASSWORD=change-me\nAUTH_URL=http://10.0.0.5:8080\n");
     expect(w.status, w.out).toBe(0);
     expect(w.out).toMatch(/WARN\s+ADMIN_PASSWORD.*Quản trị > Người dùng/);
+  });
+
+  const curlLog = () => (fs.existsSync(path.join(tmp, "curl.log")) ? fs.readFileSync(path.join(tmp, "curl.log"), "utf8") : "");
+
+  it("mặc định kiểm tra http://127.0.0.1:8080 (hoặc HTTP_PORT), không dùng -k", () => {
+    run();
+    expect(curlLog()).toContain("http://127.0.0.1:8080/api/health");
+    expect(curlLog()).not.toMatch(/(^| )-k( |$)/m);
+    run({ HTTP_PORT: "9090" });
+    expect(curlLog()).toContain("http://127.0.0.1:9090/api/health");
+  });
+
+  it("--base-url dùng cho health/login/401/header; không tự thêm -k", () => {
+    const r = run({}, GOOD_PS, undefined, ["--base-url", "https://portal.example.vn/"]);
+    expect(r.status, r.out).toBe(0);
+    const log = curlLog();
+    for (const p of ["/api/health", "/login", "/api/documents"]) expect(log).toContain(`https://portal.example.vn${p}`);
+    expect(log).not.toContain("127.0.0.1");
+    expect(log).not.toMatch(/(^| )-k( |$)/m);
+  });
+
+  it("--insecure thêm -k vào mọi lệnh curl", () => {
+    run({}, GOOD_PS, undefined, ["--base-url", "https://127.0.0.1:8443", "--insecure"]);
+    const lines = curlLog().trim().split("\n");
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+    for (const l of lines) expect(l).toMatch(/(^| )-k( |$)/);
+  });
+
+  it("--base-url sai định dạng -> mã thoát 2", () => {
+    const r = run({}, GOOD_PS, undefined, ["--base-url", "portal.example.vn"]);
+    expect(r.status).toBe(2);
+    expect(r.out).toContain("--base-url");
+  });
+
+  it("POSTGRES_PASSWORD có ký tự không URL-safe -> FAIL (không in giá trị); hex -> PASS", () => {
+    for (const bad of ["p@ss/word", "a b", "x:y", "pa%ss", "a#b"]) {
+      const r = run({}, GOOD_PS, `POSTGRES_PASSWORD=${bad}\nAUTH_URL=http://10.0.0.5:8080\n`);
+      expect(r.status, bad).toBe(1);
+      expect(r.out).toMatch(/FAIL\s+POSTGRES_PASSWORD URL-safe/);
+      expect(r.out).not.toContain(bad);
+    }
+    const ok = run({}, GOOD_PS, "POSTGRES_PASSWORD=0a1b2c3d4e5f-._~XYZ\nAUTH_URL=http://10.0.0.5:8080\n");
+    expect(ok.status, ok.out).toBe(0);
+    expect(ok.out).toMatch(/PASS\s+POSTGRES_PASSWORD URL-safe/);
   });
 
   it("có dify-gateway: kiểm tra mạng từ worker; lỗi chỉ là WARN", () => {

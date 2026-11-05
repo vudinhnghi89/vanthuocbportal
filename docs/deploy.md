@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai (chung máy chủ với Dify)
 
-Tài liệu cho **quản trị viên hoặc AI agent chỉ có đường dẫn repo** và một máy Ubuntu Server 26.04 LTS đã chạy Dify bằng Docker. Làm lần lượt từ mục 0 đến 12; mục 12 là danh sách lệnh tóm tắt để chạy và báo cáo lại cho chủ sở hữu.
+Tài liệu cho **quản trị viên hoặc AI agent chỉ có đường dẫn repo** và một máy Ubuntu Server 26.04 LTS đã chạy Dify bằng Docker. Làm lần lượt từ mục 0 đến 12 (mục 13 liệt kê giới hạn đã biết); mục 12 là danh sách lệnh tóm tắt để chạy và báo cáo lại cho chủ sở hữu.
 
 Mọi lệnh dưới đây chạy trong thư mục repo (`vanthuocbportal`) trên máy chủ, trừ khi ghi khác. Không dán nội dung `.env` hay API key vào log/chat/báo cáo.
 
@@ -108,7 +108,7 @@ chmod 600 .env
 Sinh các bí mật (mỗi lệnh một giá trị, dán vào `.env`; **đừng in lại giá trị ra log**):
 
 ```bash
-openssl rand -hex 24    # POSTGRES_PASSWORD
+openssl rand -hex 24    # POSTGRES_PASSWORD (phải URL-safe: hex là đủ)
 openssl rand -hex 32    # APP_SECRET (>= 32 ký tự)
 openssl rand -hex 32    # AUTH_SECRET
 ```
@@ -117,8 +117,7 @@ Sửa `.env` (ví dụ bằng `nano .env`). Ý nghĩa từng biến có chú th�
 
 | Biến | Cách đặt |
 | --- | --- |
-| `POSTGRES_PASSWORD` | Chuỗi hex ở trên. |
-| `DATABASE_URL` | `postgres://vanthu:<POSTGRES_PASSWORD>@postgres:5432/vanthu`. Host phải là `postgres`; mật khẩu phải **trùng** `POSTGRES_PASSWORD`. |
+| `POSTGRES_PASSWORD` | Chuỗi hex ở trên. Phải **URL-safe** (chỉ `A-Za-z0-9._~-`) vì `docker-compose.yml` tự ghép `DATABASE_URL=postgres://vanthu:${POSTGRES_PASSWORD}@postgres:5432/vanthu` cho `web`, `worker`, `migrate`. **Không đặt `DATABASE_URL` trong `.env`** (Compose bỏ qua). `scripts/post-deploy-check.sh` báo FAIL nếu mật khẩu chứa ký tự khác. Chỉ khi chạy ngoài Docker/dev thì `DATABASE_URL` mới được đọc từ môi trường. |
 | `APP_SECRET` | Chuỗi hex 64 ký tự. Mất/đổi = API key Dify đã lưu không đọc được. **Lưu một bản ở nơi an toàn.** |
 | `AUTH_SECRET` | Chuỗi hex 64 ký tự. |
 | `AUTH_URL` | **Bắt buộc đúng.** Là URL người dùng gõ vào trình duyệt: `http://<IP-máy-chủ>:8080` (HTTP thuần) hoặc `https://<tên miền>:8443` (mục 9). Cookie phiên là `Secure` ở production trừ khi `AUTH_URL` bắt đầu bằng `http://`; đặt sai thì trình duyệt vứt cookie và đăng nhập quay về `/login` mãi mãi. Mặc định trong file mẫu là `http://localhost:8080`, chỉ đúng khi mở trình duyệt ngay trên máy chủ. |
@@ -210,7 +209,7 @@ Kiểm tra: `docker compose ps -a` (mọi service `running`/`healthy`, `migrate`
 scripts/post-deploy-check.sh
 ```
 
-In bảng PASS/WARN/FAIL (trạng thái service, `/api/health`, `/login`, `/api/documents` chưa đăng nhập trả 401, header bảo mật, `/data` ghi được, schema `pgboss`, Postgres không công bố cổng, cổng 8080/8443, đĩa/RAM, `.env`). Mã thoát khác 0 nếu có FAIL. Dùng `--port`/`--tls-port` nếu đã đổi cổng. Script không đọc bí mật và không kiểm tra được API key Dify.
+In bảng PASS/WARN/FAIL (trạng thái service, `/api/health`, `/login`, `/api/documents` chưa đăng nhập trả 401, header bảo mật, `/data` ghi được, schema `pgboss`, Postgres không công bố cổng, cổng 8080/8443, đĩa/RAM, `.env`). Mã thoát khác 0 nếu có FAIL. Dùng `--port`/`--tls-port` nếu đã đổi cổng. Sau khi bật HTTPS (mục 9) hãy truyền `--base-url https://portal.example.vn[:8443]` (mặc định `http://127.0.0.1:${HTTP_PORT:-8080}`, nếu không các kiểm tra health/login/401/header báo FAIL giả); chỉ thêm `--insecure` (curl `-k`) khi dùng chứng chỉ tự ký/`tls internal`. Script cũng kiểm tra `POSTGRES_PASSWORD` URL-safe. Script không đọc bí mật và không kiểm tra được API key Dify.
 
 ### 7.2 Thủ công (bắt buộc, cần trình duyệt)
 
@@ -250,6 +249,15 @@ Cả hai ứng dụng trong Dify là loại **Workflow** (không phải Chatflow
   Hoặc `json` là đối tượng `{"co_quan_ban_hanh":"Sở Y tế","loai_cong_van":"Công văn","tieu_de":"...","tom_tat":"..."}`.
 - Thiếu biến `markdown` hoặc `json`, hoặc `json` không phải JSON hợp lệ, là lỗi (văn bản chuyển `Lỗi`, dùng "Chạy lại" sau khi sửa workflow). Mặc định: thời gian chờ 300 giây, thử lại 3 lần (lỗi mạng, timeout, 429, 5xx).
 
+#### Giới hạn của Dify phải chỉnh TRƯỚC lần tải lên thật đầu tiên
+
+Portal nhận PDF tới **50 MB** (hằng `MAX_FILE_BYTES` trong `src/lib/upload-plan.ts`; muốn giảm phải sửa mã), nhưng Dify mặc định chỉ nhận **15 MB** (`UPLOAD_FILE_SIZE_LIMIT=15`), nên mọi PDF 15-50 MB sẽ lỗi vĩnh viễn với "Dify từ chối yêu cầu (HTTP 413)". Trong thư mục Dify (`docker/.env`):
+
+1. Đặt `UPLOAD_FILE_SIZE_LIMIT=50`.
+2. Bảo đảm `NGINX_CLIENT_MAX_BODY_SIZE` (nginx của Dify) **>= 50M** (mặc định 15M; đặt `50M` hoặc cao hơn).
+3. Khởi động lại Dify: `docker compose down && docker compose up -d` (trong thư mục `docker` của Dify; `restart` đơn thuần không nạp lại `.env`).
+4. Thời gian chạy: workflow gọi chế độ blocking nên một lần OCR scan lớn có thể chạy lâu. `GUNICORN_TIMEOUT` của Dify mặc định 360 giây; nếu OCR một tệp lớn có thể vượt mức này, nâng lên (ví dụ `GUNICORN_TIMEOUT=900`) hoặc giữ workflow OCR đủ nhanh. Đồng thời thời gian chờ của portal (form tích hợp) phải lớn hơn thời gian OCR thực tế. Giới hạn tổng: 2 × thời gian chờ × (số lần thử lại + 1) <= 3300 giây (công việc hết hạn sau 3600 giây); mặc định OCR 300 giây × 3 lần thử lại = 2400, agent 120 × 2 = 720.
+
 ### 8.2 Agent chọn rule (thẻ "Agent chọn rule")
 
 Dùng để phân xử khi có các rule ứng viên (`candidates`) cần chọn một.
@@ -269,6 +277,7 @@ Mặc định `Caddyfile` phục vụ HTTP thuần (`:80` trong container, tức
 1. Sửa `Caddyfile`: đổi `:80 {` thành tên miền, ví dụ `portal.example.vn {`. Bỏ comment dòng `header Strict-Transport-Security ...` **chỉ khi chắc chắn** HTTPS ổn định. Nên thêm khối tùy chọn toàn cục ở đầu file: `{ auto_https disable_redirects }` (nếu không, Caddy chuyển hướng HTTP sang `https://<miền>` **không kèm `:8443`**, làm hỏng người dùng truy cập qua 8443).
 2. Đặt `AUTH_URL=https://portal.example.vn:8443` trong `.env` (đổi sang `https://` bắt buộc khi đã có TLS; **bỏ `:8443` nếu đã đưa cổng 443 chuẩn như tùy chọn 3 bên dưới**).
 3. `docker compose up -d` (nạp lại `.env` và `Caddyfile`); kiểm tra `docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile`.
+4. Chạy lại kiểm tra với địa chỉ HTTPS: `scripts/post-deploy-check.sh --base-url https://portal.example.vn:8443` (thêm `--insecure` chỉ khi chứng chỉ tự ký/`tls internal`). Không có `--base-url`, script vẫn gọi `http://127.0.0.1:8080` và có thể báo FAIL giả.
 
 Vì host 80/443 do Dify giữ, Caddy tự cấp chứng chỉ chỉ hoạt động nếu máy chủ được truy cập từ Internet **qua cổng 80/443 ngoài** (cần HTTP-01/TLS-ALPN-01). Các lựa chọn:
 
@@ -293,7 +302,7 @@ Vì host 80/443 do Dify giữ, Caddy tự cấp chứng chỉ chỉ hoạt độ
   Migration chỉ tiến (forward-only). **Quay lui:** `git checkout <commit-trước>` và `docker compose up -d --build`; nếu migration mới đã chạy và không tương thích bản cũ thì phải phục hồi bản sao lưu trước đó bằng `scripts/restore.sh` (xem `docs/backup.md`), không có lệnh "down migration".
 - **Sao lưu:** `scripts/backup.sh` (cron/systemd timer, sao chép ra ngoài máy chủ, diễn tập phục hồi): toàn bộ ở `docs/backup.md`. Việc cài cron là bước vận hành, không tự cài bởi `docker compose up`.
 - **Người dùng:** Quản trị > Người dùng (tạo, khóa, đặt lại mật khẩu). Khóa có hiệu lực ngay.
-- **Xoay vòng bí mật:** đổi `APP_SECRET` => phải nhập lại API key Dify ở Quản trị > Cấu hình tích hợp; đổi `AUTH_SECRET` => mọi người phải đăng nhập lại; đổi mật khẩu Postgres => đổi đồng thời `POSTGRES_PASSWORD` và mật khẩu trong database (`ALTER USER vanthu PASSWORD ...`) và `DATABASE_URL`. Sau khi sửa `.env`: `docker compose up -d`.
+- **Xoay vòng bí mật:** đổi `APP_SECRET` => phải nhập lại API key Dify ở Quản trị > Cấu hình tích hợp; đổi `AUTH_SECRET` => mọi người phải đăng nhập lại; đổi mật khẩu Postgres => đổi đồng thời `POSTGRES_PASSWORD` (URL-safe, `DATABASE_URL` tự cập nhật theo) và mật khẩu trong database (`ALTER USER vanthu PASSWORD ...`). Sau khi sửa `.env`: `docker compose up -d`.
 - **Dung lượng đĩa:** theo dõi `df -h` và `docker system df`; PDF nằm trong volume `appdata`, database trong `pgdata`. Dọn ảnh cũ sau cập nhật: `docker image prune -f`. **Không bao giờ** chạy `docker compose down -v` (xóa volume = mất dữ liệu).
 - Dify được quản lý riêng; cập nhật Dify không ảnh hưởng portal trừ khi đổi tên mạng/service (cập nhật `DIFY_NETWORK`/`DIFY_UPSTREAM`).
 
@@ -308,12 +317,13 @@ Vì host 80/443 do Dify giữ, Caddy tự cấp chứng chỉ chỉ hoạt độ
 | "Không giải mã được API key" | `APP_SECRET` hiện tại khác lúc lưu key | Khôi phục đúng `APP_SECRET` cũ; nếu mất, nhập lại API key ở Quản trị > Cấu hình tích hợp. |
 | Thông báo (chuông) không đến tức thời | Proxy đệm phản hồi SSE | Trong Caddyfile giữ `flush_interval -1` trong `reverse_proxy`; nếu có thêm proxy phía trước, tắt đệm (nginx: `proxy_buffering off`). |
 | Tải lên lỗi: tệp > 10 MB, hoặc mã 411/413 | Proxy phía trước giới hạn body/thiếu `Content-Length` (portal yêu cầu `Content-Length`; trả 411 nếu thiếu và 413 nếu > 200 MiB) | Caddy đã đặt `request_body max_size 210MB`. Nếu có proxy khác (nginx: `client_max_body_size 210m`), nâng giới hạn và không dùng mã hóa chunked cho upload. |
+| `HTTP 413` từ Dify ("Dify từ chối yêu cầu (HTTP 413)"), PDF 15-50 MB luôn lỗi | Dify giới hạn tải lên 15 MB (`UPLOAD_FILE_SIZE_LIMIT`) hoặc nginx Dify (`NGINX_CLIENT_MAX_BODY_SIZE`) thấp hơn tệp | Mục 8.1: đặt `UPLOAD_FILE_SIZE_LIMIT=50`, `NGINX_CLIENT_MAX_BODY_SIZE=50M` trong `docker/.env` của Dify, `docker compose down && docker compose up -d` trong thư mục Dify, rồi "Chạy lại" văn bản. |
 | Postgres hết đĩa / container postgres thoát | Đĩa đầy | `df -h`, `docker system df`; giải phóng chỗ (`docker image prune -f`, xóa log, chuyển bản sao lưu đi), `docker compose up -d`. Kiểm tra lại với `scripts/post-deploy-check.sh`. |
 | `permission denied` khi ghi `/data` | Volume `appdata` thuộc người dùng khác (ứng dụng chạy uid 1000 `node`) | `docker compose run --rm --user root --no-deps web chown -R 1000:1000 /data` rồi `docker compose up -d`. |
 | "Kiểm tra kết nối" lỗi mạng / `ENOTFOUND` / `ECONNREFUSED` | Container không tới được Dify: sai `DIFY_NETWORK`, `DIFY_UPSTREAM`, Base URL | Kiểm tra mục 5: `docker network inspect <DIFY_NETWORK>`; Base URL đúng (`http://dify-gateway/v1`); `docker compose exec -T worker node -e "fetch('http://dify-gateway/').then(r=>console.log(r.status),e=>console.log(e.cause&&e.cause.code))"` (in mã HTTP hoặc mã lỗi). |
 | `network ... declared as external, but could not be found` | `DIFY_NETWORK` sai, hoặc Dify chưa chạy | `docker network ls` rồi sửa `DIFY_NETWORK` trong `.env`. |
 | Ngày giờ lệch, lọc theo ngày thiếu/dư | Múi giờ | Giao diện và bộ lọc ngày dùng múi giờ `Asia/Ho_Chi_Minh`; dữ liệu lưu UTC. Máy chủ để UTC là bình thường. |
-| `migrate` thoát mã 1 | Biến `.env` sai (ví dụ `ADMIN_PASSWORD` quá ngắn, `DATABASE_URL` sai mật khẩu) | `docker compose logs migrate` (thông báo không chứa mật khẩu), sửa `.env`, `docker compose up -d`. |
+| `migrate` thoát mã 1 | Biến `.env` sai (ví dụ `ADMIN_PASSWORD` quá ngắn, `POSTGRES_PASSWORD` không khớp mật khẩu thật trong volume `pgdata`) | `docker compose logs migrate` (thông báo không chứa mật khẩu), sửa `.env`, `docker compose up -d`. |
 
 ## 12. Danh sách lệnh cho agent triển khai
 
@@ -324,8 +334,9 @@ Chạy lần lượt; mỗi bước có kết quả mong đợi. Dừng và báo
 3. `git clone https://github.com/vudinhnghi89/vanthuocbportal && cd vanthuocbportal` : thư mục repo.
 4. `git branch -r && git checkout claude/serene-bohr-4c8y7s` (hoặc `git checkout main` nếu đã gộp, mục 3) : đã chuyển nhánh; `git rev-parse --short HEAD` in commit.
 5. `cp .env.example .env && chmod 600 .env` : file tạo, quyền 600.
-6. `openssl rand -hex 24; openssl rand -hex 32; openssl rand -hex 32` : ba chuỗi cho `POSTGRES_PASSWORD`, `APP_SECRET`, `AUTH_SECRET`; điền vào `.env` cùng `DATABASE_URL`, `AUTH_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (mục 4).
+6. `openssl rand -hex 24; openssl rand -hex 32; openssl rand -hex 32` : ba chuỗi cho `POSTGRES_PASSWORD`, `APP_SECRET`, `AUTH_SECRET`; điền vào `.env` cùng `AUTH_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (mục 4).
 7. `grep -nE '^[A-Z_]+=.*change-me' .env; grep '^AUTH_URL=' .env` : lệnh đầu **không in gì** (dòng nào in ra là còn giá trị mẫu, kể cả `ADMIN_PASSWORD`); lệnh sau in URL thật.
+7b. **Kiểm tra giới hạn Dify TRƯỚC lần tải lên thật đầu tiên** (mục 8.1): `UPLOAD_FILE_SIZE_LIMIT=50`, `NGINX_CLIENT_MAX_BODY_SIZE` >= 50M, `GUNICORN_TIMEOUT` đủ lớn trong `docker/.env` của Dify, đã `docker compose down && up -d` : nếu bỏ qua, PDF > 15 MB lỗi "HTTP 413".
 8. `docker network ls` và `docker ps --format '{{.Names}}\t{{.Networks}}'` : xác định `DIFY_NETWORK`, ghi vào `.env` cùng `DIFY_UPSTREAM` và `COMPOSE_FILE=docker-compose.yml:docker-compose.dify.yml` (mục 5).
 9. `docker compose config -q && echo OK` : in `OK` (không báo thiếu biến).
 10. `docker compose up -d --build` : build xong, không lỗi; mất 5-10 phút lần đầu.
@@ -353,3 +364,10 @@ BÁO CÁO TRIỂN KHAI VAN THU PORTAL
 - Sao lưu: cron đã cài: <có/không>; nơi lưu: <đường dẫn>; APP_SECRET đã lưu riêng: <có/không>
 - Bất thường/cảnh báo (WARN) cần chủ sở hữu quyết định: <...>
 ```
+
+## 13. Giới hạn đã biết
+
+- Người dùng không thuộc đơn vị nào: mọi người đăng nhập đều nhận mọi thông báo (bảng văn bản có bộ lọc theo đơn vị).
+- Một rule cần khớp chính xác cả **Cơ quan ban hành** lẫn **Loại công văn** (không có rule "mọi loại").
+- Chỉ **admin** tạo/sửa được rule: nhân sự Ban thư ký phụ trách rule cần vai trò admin.
+- Văn bản bị khớp rule sai tự động không đổi hướng được trên giao diện (cách xử lý: admin sửa rule rồi tải lên lại). Chỉ văn bản bị đánh dấu cần phân loại thủ công (không khớp rule) mới phân loại bằng tay được.

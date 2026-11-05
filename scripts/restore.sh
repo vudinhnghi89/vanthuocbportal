@@ -17,7 +17,9 @@
 # Options:
 #   --yes         actually do it (without it the plan is printed and nothing changes)
 #   --force       allow restoring over a database that already contains rows in `users`
-#   --wipe-data   empty DATA_DIR (/data) before extracting (default: only add/overwrite files from the backup)
+#   --wipe-data   empty DATA_DIR (/data) before extracting (default: only add/overwrite files from the backup).
+#                 Direct mode refuses (exit 2) when DATA_DIR is /, $HOME, a parent of $HOME, or holds anything
+#                 besides pdf/ and md/ directories at its top level.
 #
 # Exit codes: 0 ok | 1 failure | 2 usage/configuration or --yes missing | 3 integrity check failed
 #             4 target database already has users (use --force) | 5 data archive rejected as unsafe
@@ -32,7 +34,7 @@ MODE=${BACKUP_MODE:-compose}
 YES=0 FORCE=0 WIPE=0
 BACKUP=""
 
-usage() { sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; }
+usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; }
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -58,6 +60,29 @@ else
   parse_pg_url "$RESTORE_DATABASE_URL" || die 2 "RESTORE_DATABASE_URL is not a valid postgres:// URL"
   unset RESTORE_DATABASE_URL DATABASE_URL
 fi
+
+# wipe_refusal_reason <dir>: lý do (tiếng Việt) không được xóa sạch thư mục này; rỗng nếu an toàn.
+# Chặn /, $HOME, thư mục cha của $HOME, và thư mục có bất cứ thứ gì ngoài hai thư mục pdf/ và md/ ở cấp cao nhất.
+wipe_refusal_reason() {
+  local d resolved home entry name
+  d=$1
+  resolved=$(realpath -m -- "$d" 2>/dev/null) || { echo "không phân giải được đường dẫn"; return; }
+  if [ "$resolved" = "/" ]; then echo "là thư mục gốc /"; return; fi
+  home=$(realpath -m -- "${HOME:-/nonexistent}" 2>/dev/null || true)
+  if [ -n "$home" ]; then
+    if [ "$resolved" = "$home" ]; then echo "là thư mục HOME ($home)"; return; fi
+    case "$home/" in "$resolved"/*) echo "là thư mục cha của HOME ($resolved)"; return ;; esac
+  fi
+  if [ -d "$resolved" ]; then
+    while IFS= read -r -d '' entry; do
+      name=${entry##*/}
+      if [ -L "$entry" ] || [ ! -d "$entry" ] || { [ "$name" != pdf ] && [ "$name" != md ]; }; then
+        echo "chứa '$name' (chỉ được có thư mục pdf/ và md/ ở cấp cao nhất)"
+        return
+      fi
+    done < <(find "$resolved" -mindepth 1 -maxdepth 1 -print0)
+  fi
+}
 
 # 1. Integrity ----------------------------------------------------------------------------------------
 log "verifying checksums..."
@@ -109,6 +134,10 @@ fi
 
 if [ "$MODE" = direct ] && [ "$HAS_DATA" -eq 1 ]; then
   [ -n "${DATA_DIR:-}" ] || die 2 "direct mode needs DATA_DIR to extract the data archive"
+  if [ "$WIPE" -eq 1 ]; then
+    reason=$(wipe_refusal_reason "$DATA_DIR")
+    [ -z "$reason" ] || die 2 "Từ chối --wipe-data vì DATA_DIR không an toàn để xóa sạch: $reason"
+  fi
   reason=$(unsafe_dir_reason "$DATA_DIR")
   [ -z "$reason" ] || die 2 "refusing unsafe DATA_DIR: $reason"
 fi

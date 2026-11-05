@@ -1,3 +1,4 @@
+# DATABASE_URL của web/worker/migrate được ghép từ POSTGRES_PASSWORD (phải URL-safe: openssl rand -hex 24).
 # Biến lấy từ .env cùng thư mục (xem .env.example). Mỗi service chỉ nhận đúng biến nó cần.
 # Nối mạng Dify: thêm `-f docker-compose.dify.yml` (xem docs/deploy.md mục 5).
 services:
@@ -27,7 +28,7 @@ services:
     command: ["node", "dist/migrate.js"]
     restart: "no"
     environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DATABASE_URL: postgres://vanthu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/vanthu
       ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME in .env}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
     depends_on:
@@ -42,7 +43,7 @@ services:
     image: vanthu-portal:local
     restart: unless-stopped
     environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DATABASE_URL: postgres://vanthu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/vanthu
       APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       AUTH_URL: ${AUTH_URL:-http://localhost:8080}
@@ -73,7 +74,7 @@ services:
     # Phải lớn hơn SHUTDOWN_TIMEOUT_MS (30s) trong src/worker/config.ts.
     stop_grace_period: 45s
     environment:
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DATABASE_URL: postgres://vanthu:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/vanthu
       APP_SECRET: ${APP_SECRET:?set APP_SECRET in .env}
       DATA_DIR: ${DATA_DIR:-/data}
     depends_on:

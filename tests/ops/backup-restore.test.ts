@@ -376,6 +376,57 @@ describe.skipIf(mode !== "run")("backup.sh / restore.sh (direct mode, real datab
       expect(fs.existsSync(data)).toBe(false);
     });
 
+    describe("--wipe-data refuses unsafe DATA_DIR (exit 2, Vietnamese message)", () => {
+      const wipeRun = (dataDir: string, home: string) =>
+        run(RESTORE_SH, [good, "--yes", "--wipe-data"], { ...restoreEnv("postgres://x@localhost/x", dataDir), HOME: home }, tmp);
+      const refused = (r: { status: number | null; stdout: string; stderr: string }) => {
+        expect(r.status).toBe(2);
+        expect(r.stderr).toContain("Từ chối --wipe-data");
+      };
+
+      it("DATA_DIR is /", () => refused(wipeRun("/", tmp)));
+
+      it("DATA_DIR is $HOME", () => {
+        const home = fs.mkdtempSync(path.join(tmp, "home-"));
+        fs.mkdirSync(path.join(home, "pdf"));
+        refused(wipeRun(home, home));
+        expect(fs.existsSync(path.join(home, "pdf"))).toBe(true);
+      });
+
+      it("DATA_DIR is a parent of $HOME (also through a symlink)", () => {
+        const parent = fs.mkdtempSync(path.join(tmp, "parent-"));
+        const home = path.join(parent, "u");
+        fs.mkdirSync(home);
+        refused(wipeRun(parent, home));
+        const link = path.join(tmp, "link-to-parent");
+        fs.symlinkSync(parent, link);
+        refused(wipeRun(link, home));
+      });
+
+      it("DATA_DIR has anything besides pdf/ and md/ at the top level", () => {
+        for (const make of [
+          (d: string) => fs.writeFileSync(path.join(d, "keep.txt"), "x"),
+          (d: string) => fs.mkdirSync(path.join(d, "other")),
+          (d: string) => fs.writeFileSync(path.join(d, "pdf"), "a file named pdf"),
+          (d: string) => fs.symlinkSync("/tmp", path.join(d, "md")),
+        ]) {
+          const d = fs.mkdtempSync(path.join(tmp, "dd-"));
+          make(d);
+          refused(wipeRun(d, tmp));
+        }
+      });
+
+      it("a plain pdf/ + md/ (or empty/missing) DATA_DIR passes the wipe guard", () => {
+        const ok = fs.mkdtempSync(path.join(tmp, "dd-ok-"));
+        fs.mkdirSync(path.join(ok, "pdf"));
+        fs.mkdirSync(path.join(ok, "md"));
+        for (const d of [ok, path.join(tmp, "dd-missing")]) {
+          const r = wipeRun(d, tmp);
+          expect(r.stderr).not.toContain("Từ chối --wipe-data");
+        }
+      });
+    });
+
     it("requires a target and a backup directory", () => {
       expect(run(RESTORE_SH, [], restoreEnv("postgres://x@localhost/x", tmp), tmp).status).toBe(2);
       expect(run(RESTORE_SH, [good, "--yes"], { BACKUP_MODE: "direct", DATA_DIR: tmp }, tmp).status).toBe(2);
@@ -425,7 +476,8 @@ describe.skipIf(mode !== "run")("backup.sh / restore.sh (direct mode, real datab
     it("restores into an empty database: row counts, contents, encrypted setting, pgboss and data files", async () => {
       const target = await newEmptyDb();
       const data = mk("restore-data-ok");
-      fs.writeFileSync(path.join(data, "keep.txt"), "pre-existing");
+      fs.mkdirSync(path.join(data, "pdf"), { recursive: true });
+      fs.writeFileSync(path.join(data, "pdf", "keep.txt"), "pre-existing");
       const r = run(RESTORE_SH, [good, "--yes"], restoreEnv(target.url, data), tmp);
       expect(r.status, r.stderr).toBe(0);
       for (const out of [r.stdout, r.stderr]) {
@@ -464,14 +516,14 @@ describe.skipIf(mode !== "run")("backup.sh / restore.sh (direct mode, real datab
         expect(fs.readFileSync(f).equals(buf), rel).toBe(true);
         expect(modeOf(f) & 0o022).toBe(0);
       }
-      expect(fs.readFileSync(path.join(data, "keep.txt"), "utf8")).toBe("pre-existing");
+      expect(fs.readFileSync(path.join(data, "pdf", "keep.txt"), "utf8")).toBe("pre-existing");
 
       // --wipe-data removes unrelated files first; --force needed since the target is now populated
       const again = run(RESTORE_SH, [good, "--yes"], restoreEnv(target.url, data), tmp);
       expect(again.status).toBe(4);
       const wipe = run(RESTORE_SH, [good, "--yes", "--force", "--wipe-data"], restoreEnv(target.url, data), tmp);
       expect(wipe.status, wipe.stderr).toBe(0);
-      expect(fs.existsSync(path.join(data, "keep.txt"))).toBe(false);
+      expect(fs.existsSync(path.join(data, "pdf", "keep.txt"))).toBe(false);
       expect(walk(data).sort()).toEqual(Object.keys(dataFiles).sort());
     }, 90_000);
 
